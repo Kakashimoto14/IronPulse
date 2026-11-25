@@ -1,0 +1,111 @@
+name: Build IronPulse APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  qa-and-build-apk:
+    runs-on: ubuntu-24.04
+
+    env:
+      BUILD_TOOLS_VERSION: 34.0.0
+      PLATFORM_VERSION: android-34
+
+    steps:
+      - name: Checkout IronPulse
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for Automated QA Suite
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run IronPulse QA, Version Control & Exercise Science Suite
+        run: node scripts/qa-check.js
+
+      - name: Setup JDK 17 (compiles --release 11 bytecode cleanly)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Prepare Android SDK Build Tools (34.0.0 & android-34)
+        run: |
+          SDK_DIR="${ANDROID_HOME:-/opt/android-sdk}"
+          echo "ANDROID_SDK_ROOT=${SDK_DIR}" >> "$GITHUB_ENV"
+
+          if [[ -x "${SDK_DIR}/build-tools/${BUILD_TOOLS_VERSION}/aapt" && -f "${SDK_DIR}/platforms/${PLATFORM_VERSION}/android.jar" ]]; then
+            echo "Using preinstalled Android SDK at ${SDK_DIR}"
+            exit 0
+          fi
+
+          SDKMANAGER="${SDK_DIR}/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "${SDKMANAGER}" ]]; then
+            sudo mkdir -p "${SDK_DIR}/cmdline-tools"
+            sudo chown -R "$(whoami):$(whoami)" "${SDK_DIR}"
+            curl -sSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d "${SDK_DIR}/cmdline-tools"
+            mv "${SDK_DIR}/cmdline-tools/cmdline-tools" "${SDK_DIR}/cmdline-tools/latest"
+            rm -f /tmp/cmdline-tools.zip
+          fi
+
+          set +o pipefail
+          yes | "${SDKMANAGER}" --sdk_root="${SDK_DIR}" --licenses >/dev/null 2>&1 || true
+          set -o pipefail
+
+          "${SDKMANAGER}" --sdk_root="${SDK_DIR}"             "platforms;${PLATFORM_VERSION}"             "build-tools;${BUILD_TOOLS_VERSION}" >/dev/null
+
+      - name: Build & Sign IronPulse APK (Gradle-Free d8 Pipeline)
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
+
+      - name: Verify Authorized Fingerprint (if EXPECTED_SHA256 secret is configured)
+        env:
+          EXPECTED_SHA256: ${{ secrets.EXPECTED_SHA256 }}
+        run: |
+          EXPECTED_CLEAN=$(printf '%s' "${EXPECTED_SHA256:-}" | tr -d ':[:space:]')
+          if [[ -z "${EXPECTED_CLEAN}" ]]; then
+            echo "EXPECTED_SHA256 secret not configured — skipping fingerprint check."
+            exit 0
+          fi
+          APK_FILE=$(ls dist/IronPulse-*.apk | head -n 1)
+          ACTUAL=$("${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS_VERSION}/apksigner" verify --print-certs "${APK_FILE}" | grep -i "certificate SHA-256 digest:" | head -n 1 | awk '{print $NF}')
+          echo "Verified APK:     ${APK_FILE}"
+          echo "Actual SHA-256:   ${ACTUAL}"
+          if [[ "${ACTUAL,,}" != "${EXPECTED_CLEAN,,}" ]]; then
+            echo "ERROR: Signing certificate SHA-256 mismatch!"
+            exit 1
+          fi
+          echo "Fingerprint verified successfully."
+
+      - name: Upload APK Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IronPulse-APK-${{ github.run_number }}
+          path: |
+            dist/*.apk
+            dist/version.json
+          retention-days: 30
+
+      - name: Publish GitHub Release on Version Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.apk
+            dist/version.json
+          generate_release_notes: true

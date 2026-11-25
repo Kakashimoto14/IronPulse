@@ -1,0 +1,145 @@
+/* Smooth Mobile Transitions, Kinetic Recoil & Hype After-Effects */
+
+@keyframes screenEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes cardStagger {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes sheetSlideUp {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes setStamp {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); background: var(--signal-olive); border-color: var(--signal-olive); }
+  100% { transform: scale(1); }
+}
+
+@keyframes prShock {
+  0% { transform: scale(0.7) rotate(-4deg); opacity: 0; }
+  45% { transform: scale(1.12) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes screenRecoil {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-3px, 2px, 0); }
+  45% { transform: translate3d(3px, -2px, 0); }
+  70% { transform: translate3d(-2px, 1px, 0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.75); }
+}
+
+@keyframes stripeMove {
+  from { background-position: 0 0; }
+  to { background-position: 28px 0; }
+}
+
+@keyframes bannerDrop {
+  0% { transform: translate3d(-50%, -120%, 0) scale(0.92); opacity: 0; }
+  18% { transform: translate3d(-50%, 0, 0) scale(1.03); opacity: 1; }
+  26% { transform: translate3d(-50%, 0, 0) scale(1); opacity: 1; }
+  84% { transform: translate3d(-50%, 0, 0) scale(1); opacity: 1; }
+  100% { transform: translate3d(-50%, -115%, 0) scale(0.95); opacity: 0; }
+}
+
+@keyframes victoryPop {
+  0% { opacity: 0; transform: scale(0.9) translateY(20px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.view-enter {
+  animation: screenEnter 280ms var(--ease-spring) both;
+}
+
+.stagger-item {
+  animation: cardStagger 320ms var(--ease-spring) both;
+}
+.stagger-item:nth-child(2) { animation-delay: 45ms; }
+.stagger-item:nth-child(3) { animation-delay: 90ms; }
+.stagger-item:nth-child(4) { animation-delay: 135ms; }
+.stagger-item:nth-child(5) { animation-delay: 180ms; }
+.stagger-item:nth-child(6) { animation-delay: 225ms; }
+
+.recoil-shake {
+  animation: screenRecoil 240ms linear;
+}
+
+.btn-tactile {
+  transition: transform 110ms var(--ease-spring), background-color 140ms ease, border-color 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-tactile:active {
+  transform: scale(0.96);
+}
+
+.set-row.just-completed .set-check {
+  animation: setStamp 320ms var(--ease-snap);
+}
+
+.pr-tag {
+  animation: prShock 360ms var(--ease-snap) both;
+}
+
+.live-dot {
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+.pr-ignition-banner {
+  position: fixed;
+  top: calc(14px + var(--safe-top));
+  left: 50%;
+  transform: translate3d(-50%, -130%, 0);
+  z-index: 950;
+  background: var(--signal-amber);
+  color: #0B0C0E;
+  border: 2px solid var(--ink-chalk);
+  padding: 10px 18px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+}
+.pr-ignition-banner.active {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: bannerDrop 2200ms var(--ease-spring) forwards;
+}
+
+.sheet-panel {
+  animation: sheetSlideUp 300ms var(--ease-spring) both;
+}
+
+.victory-card {
+  animation: victoryPop 380ms var(--ease-spring) both;
+}

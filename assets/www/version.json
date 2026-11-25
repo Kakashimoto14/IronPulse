@@ -1,0 +1,7 @@
+{
+  "version": "1.1.0",
+  "versionCode": 10100,
+  "tag": "v1.1.0",
+  "repo": "Kakashimoto14/IronPulse",
+  "releaseNotes": "Added GitHub Releases in-app OTA updater (download progress, zero-dependency Android APK installer, permission prompt), single-source version.json release control, and dynamic tag-synced APK builds."
+}
