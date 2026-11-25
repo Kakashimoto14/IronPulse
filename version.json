@@ -1,0 +1,7 @@
+{
+  "version": "1.2.0",
+  "versionCode": 10200,
+  "tag": "v1.2.0",
+  "repo": "Kakashimoto14/IronPulse",
+  "releaseNotes": "v1.2.0 Major Upgrade: Studio Ecorche Male/Female Anatomical Engine (layered muscle fibers + sculpted front/back heatmap), Interactive 1RM & Body Measurement Canvas Charts (Chest, Biceps, Forearms, Waist, Thighs), Custom Split & Workout Editor, Live Audio Tempo Metronome, and Native Android Home Screen Widget."
+}
