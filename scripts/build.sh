@@ -81,8 +81,7 @@ with open("android/AndroidManifest.xml", encoding="utf-8") as f:
     xml = f.read()
 xml = re.sub(r'android:versionCode="[^"]+"', f'android:versionCode="{vcode}"', xml)
 xml = re.sub(r'android:versionName="[^"]+"', f'android:versionName="{ver}"', xml)
-with open(out_path, "w", encoding="utf-8", newline="
-") as f:
+with open(out_path, "w", encoding="utf-8", newline="\n") as f:
     f.write(xml)
 PY
 
