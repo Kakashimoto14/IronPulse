@@ -5,6 +5,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
@@ -26,6 +29,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 public class IronPulseBridge {
     private final Activity activity;
@@ -352,6 +356,63 @@ public class IronPulseBridge {
                 );
             } catch (Exception ignored) {}
         });
+    }
+
+
+    @JavascriptInterface
+    public String getSigningSha256() {
+        try {
+            PackageManager pm = activity.getPackageManager();
+            Signature[] sigs = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo pi = pm.getPackageInfo(activity.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+                if (pi.signingInfo != null) {
+                    sigs = pi.signingInfo.hasMultipleSigners()
+                            ? pi.signingInfo.getApkContentsSigners()
+                            : pi.signingInfo.getSigningCertificateHistory();
+                }
+            } else {
+                @SuppressWarnings("deprecation")
+                PackageInfo pi = pm.getPackageInfo(activity.getPackageName(), PackageManager.GET_SIGNATURES);
+                sigs = pi.signatures;
+            }
+            if (sigs == null || sigs.length == 0) return "";
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(sigs[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @JavascriptInterface
+    public void fetchReleaseVersionMeta(final String metaUrl) {
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                conn = openFollowingRedirects(metaUrl, "application/json");
+                int status = conn.getResponseCode();
+                if (status >= 200 && status < 300) {
+                    InputStream stream = conn.getInputStream();
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[2048];
+                    int read;
+                    while ((read = stream.read(buf)) != -1) {
+                        out.write(buf, 0, read);
+                    }
+                    stream.close();
+                    final String b64 = toB64(out.toString("UTF-8"));
+                    evalJs("window.IronPulseUpdater && window.IronPulseUpdater.onReleaseMetaResult('" + b64 + "')");
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
     }
 
     public void release() {

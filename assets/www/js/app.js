@@ -929,7 +929,7 @@
           '<button type="button" id="btn-export-json" class="btn btn-secondary btn-sm btn-tactile" style="flex:1;">EXPORT JSON</button>' +
           '<button type="button" id="btn-import-json" class="btn btn-secondary btn-sm btn-tactile" style="flex:1;">IMPORT JSON</button>' +
         '</div>' +
-        '<div class="mono" style="font-size:11px;color:var(--ink-slate);">IronPulse v' + esc(Updater.getCurrentVersion()) + ' (build ' + Updater.getCurrentVersionCode() + ') • Offline APK</div>' +
+        '<div class="mono" style="font-size:11px;color:var(--ink-slate);">IronPulse v' + esc(Updater.getCurrentVersion()) + ' (build ' + Updater.getCurrentVersionCode() + ')' + (Updater.getInstalledSigningSha256() ? ' • KEY ' + Updater.getInstalledSigningSha256().slice(0, 8).toUpperCase() : '') + '</div>' +
       '</div>';
 
     document.getElementById('btn-recalibrate').onclick = function () {
@@ -1683,9 +1683,17 @@
         '</div>';
     }
 
-    var permBlock = st.permissionNeeded
-      ? '<div class="plate plate-amber" style="padding:10px;margin-bottom:10px;font-size:12px;">Enable <strong>Allow from this source</strong> in Android Settings, then tap <strong>LAUNCH INSTALLER</strong> below.</div>'
+    var mismatchBlock = st.signingMismatch
+      ? '<div class="plate plate-amber" style="padding:10px;margin-bottom:10px;font-size:12px;">' +
+          '<div class="h-kicker" style="color:var(--signal-amber);margin-bottom:4px;">SIGNING KEY CHANGED — PREVENT PACKAGE CONFLICT</div>' +
+          'This release was signed with a different keystore than your installed build. Tap <strong>EXPORT BACKUP FIRST</strong>, uninstall this old build, then install the new APK from GitHub Releases so all future updates install smoothly in-place.' +
+          '<button type="button" id="btn-modal-backup-first" class="btn btn-secondary btn-sm btn-full btn-tactile" style="margin-top:8px;">EXPORT WORKOUT BACKUP JSON</button>' +
+        '</div>'
       : '';
+
+    var permBlock = mismatchBlock + (st.permissionNeeded
+      ? '<div class="plate plate-amber" style="padding:10px;margin-bottom:10px;font-size:12px;">Enable <strong>Allow from this source</strong> in Android Settings, then tap <strong>LAUNCH INSTALLER</strong> below.</div>'
+      : '');
 
     var errBlock = st.error
       ? '<div class="plate plate-crimson" style="padding:10px;margin-bottom:10px;font-size:12px;color:#FF8C96;">' + esc(st.error) + '</div>'
@@ -1721,6 +1729,9 @@
 
     var retryBtn = document.getElementById('btn-modal-retry-install');
     if (retryBtn) retryBtn.onclick = function () { Native.vibrateSetDone(); Updater.retryInstall(); };
+
+    var bkBtn = document.getElementById('btn-modal-backup-first');
+    if (bkBtn) bkBtn.onclick = function () { Native.vibrateSetDone(); Native.exportBackup(state); };
 
     var brBtn = document.getElementById('btn-modal-open-browser');
     if (brBtn) brBtn.onclick = function () { Native.vibrateLight(); Updater.openReleasePage(); };

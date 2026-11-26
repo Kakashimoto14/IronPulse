@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
-  "versionCode": 10200,
-  "tag": "v1.2.0",
+  "version": "1.2.1",
+  "versionCode": 10201,
+  "tag": "v1.2.1",
   "repo": "Kakashimoto14/IronPulse",
-  "releaseNotes": "v1.2.0 Major Upgrade: Studio Ecorche Male/Female Anatomical Engine (layered muscle fibers + sculpted front/back heatmap), Interactive 1RM & Body Measurement Canvas Charts (Chest, Biceps, Forearms, Waist, Thighs), Custom Split & Workout Editor, Live Audio Tempo Metronome, and Native Android Home Screen Widget."
+  "releaseNotes": "v1.2.1 Stability & DevOps Release: Added signing-certificate mismatch pre-check before APK install (prevents package conflict surprises), 1-tap backup inside the Update sheet, and zero-error Termux automation scripts (termux-setup-keystore.sh & termux-release.sh)."
 }

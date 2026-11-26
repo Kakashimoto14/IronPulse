@@ -163,11 +163,36 @@ else
     "${ALIGNED_APK}"
 fi
 
-cp version.json "${OUT_DIR}/version.json"
-
 echo "=== Verifying APK Signature & Alignment ==="
 "${ZIPALIGN}" -c -v 4 "${FINAL_APK}" >/dev/null
-"${APKSIGNER}" verify --print-certs "${FINAL_APK}"
+VERIFY_OUT=$("${APKSIGNER}" verify --print-certs "${FINAL_APK}")
+echo "${VERIFY_OUT}"
+ACTUAL_SHA256=$(printf '%s\n' "${VERIFY_OUT}" | grep -i "certificate SHA-256 digest:" | head -n 1 | awk '{print $NF}')
+SIGN_MODE="debug-ephemeral"
+if [[ -n "${KEYSTORE_B64:-}" && -n "${KEYSTORE_PASS:-}" ]]; then
+  SIGN_MODE="production"
+else
+  echo "========================================================================"
+  echo "WARNING: Built with ephemeral debug keystore (KEYSTORE_B64 not set)."
+  echo "Android will block in-place OTA updates until KEYSTORE_B64 & KEYSTORE_PASS"
+  echo "are added to GitHub Repo Secrets (run scripts/termux-setup-keystore.sh)."
+  echo "========================================================================"
+fi
+
+python3 - "${APP_VERSION}" "${APP_VERSION_CODE}" "${ACTUAL_SHA256}" "${SIGN_MODE}" "${OUT_DIR}/version.json" <<'PY'
+import json, sys
+ver, vcode, sha, mode, out_path = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+with open("version.json", encoding="utf-8") as f:
+    meta = json.load(f)
+meta["version"] = ver
+meta["versionCode"] = vcode
+meta["tag"] = f"v{ver}"
+meta["signingSha256"] = sha.lower()
+meta["signingMode"] = mode
+with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+    json.dump(meta, f, indent=2)
+    f.write("\n")
+PY
 
 ls -lh "${FINAL_APK}"
-echo "SUCCESS: Built ${FINAL_APK}"
+echo "SUCCESS: Built ${FINAL_APK} (${SIGN_MODE}, sha256=${ACTUAL_SHA256:0:12}...)"

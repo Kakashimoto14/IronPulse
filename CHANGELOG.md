@@ -1,5 +1,9 @@
 # IronPulse Changelog
 
+## v1.2.1
+- **Signing Key Conflict Guard:** `IronPulseBridge.getSigningSha256()` + `scripts/build.sh` now stamp and compare APK signing SHA-256 fingerprints before launch, displaying a clear 1-tap backup prompt if signing keys differ instead of an unexplained Android package conflict.
+- **Zero-Error Termux Automation (`scripts/termux-setup-keystore.sh` & `scripts/termux-release.sh`):** 1-command permanent production keystore generator for Termux and 1-command Git sync/commit/tag/push script that never wipes `.git` or loses `origin`.
+
 ## v1.2.0
 - **Studio Ecorché Anatomical Upgrade:** Upgraded both the 60 FPS animated Male/Female exercise tutor (multi-strand fiber striations + live on-stage contraction % telemetry bar) and the Front/Back Recovery Heatmap (sculpted anatomical Bézier muscle polygons with fat-thumb touch targeting).
 - **Interactive Canvas Analytics (`charts.js`):** Added high-DPI **Estimated 1RM Strength Trend** line charts and a **Bodyweight & Tape Measurements** tracker (`Chest`, `Arms`, `Forearms`, `Waist`, `Thighs` in cm).

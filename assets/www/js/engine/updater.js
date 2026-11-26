@@ -1,8 +1,8 @@
 (function (root) {
   'use strict';
 
-  var FALLBACK_VERSION = '1.2.0';
-  var FALLBACK_CODE = 10200;
+  var FALLBACK_VERSION = '1.2.1';
+  var FALLBACK_CODE = 10201;
   var FALLBACK_REPO = 'Kakashimoto14/IronPulse';
 
   var listeners = [];
@@ -14,6 +14,8 @@
     totalBytes: 0,
     downloadedReady: false,
     permissionNeeded: false,
+    signingMismatch: false,
+    remoteSigningSha256: '',
     state: 'idle', // idle | checking | up_to_date | update_available | no_release | offline | error
     error: '',
     lastCheckedAt: null,
@@ -39,6 +41,13 @@
       return String(root.IronPulseBridge.getDefaultRepo());
     }
     return FALLBACK_REPO;
+  }
+
+  function getInstalledSigningSha256() {
+    if (root.IronPulseBridge && root.IronPulseBridge.getSigningSha256) {
+      return String(root.IronPulseBridge.getSigningSha256() || '').toLowerCase();
+    }
+    return '';
   }
 
   function normalizeVersion(v) {
@@ -85,7 +94,8 @@
   function getStatus() {
     return Object.assign({
       currentVersion: getCurrentVersion(),
-      currentVersionCode: getCurrentVersionCode()
+      currentVersionCode: getCurrentVersionCode(),
+      installedSigningSha256: getInstalledSigningSha256()
     }, status);
   }
 
@@ -102,6 +112,11 @@
       var apkAsset = assets.find(function (a) {
         return a && a.name && /\.apk$/i.test(a.name) && a.browser_download_url;
       }) || null;
+      var metaAsset = assets.find(function (a) {
+        return a && a.name === 'version.json' && a.browser_download_url;
+      }) || null;
+      status.signingMismatch = false;
+      status.remoteSigningSha256 = '';
 
       status.latest = {
         tag: tag || ('v' + latestVer),
@@ -116,6 +131,9 @@
 
       if (compareSemver(latestVer, getCurrentVersion()) > 0) {
         status.state = 'update_available';
+        if (metaAsset && root.IronPulseBridge && root.IronPulseBridge.fetchReleaseVersionMeta) {
+          root.IronPulseBridge.fetchReleaseVersionMeta(metaAsset.browser_download_url);
+        }
       } else {
         status.state = 'up_to_date';
       }
@@ -246,6 +264,18 @@
     emit();
   }
 
+
+  function onReleaseMetaResult(b64) {
+    try {
+      var meta = JSON.parse(decodeB64Utf8(b64));
+      var remoteSha = String(meta.signingSha256 || '').toLowerCase();
+      var localSha = getInstalledSigningSha256();
+      status.remoteSigningSha256 = remoteSha;
+      status.signingMismatch = !!(remoteSha && localSha && remoteSha !== localSha);
+      emit();
+    } catch (ignored) {}
+  }
+
   var exported = {
     getCurrentVersion: getCurrentVersion,
     getCurrentVersionCode: getCurrentVersionCode,
@@ -263,7 +293,9 @@
     onDownloadProgress: onDownloadProgress,
     onDownloadComplete: onDownloadComplete,
     onDownloadError: onDownloadError,
-    onInstallPermissionNeeded: onInstallPermissionNeeded
+    onInstallPermissionNeeded: onInstallPermissionNeeded,
+    onReleaseMetaResult: onReleaseMetaResult,
+    getInstalledSigningSha256: getInstalledSigningSha256
   };
 
   if (typeof module !== 'undefined' && module.exports) {
