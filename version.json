@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "versionCode": 10201,
-  "tag": "v1.2.1",
+  "version": "1.3.0",
+  "versionCode": 10300,
+  "tag": "v1.3.0",
   "repo": "Kakashimoto14/IronPulse",
-  "releaseNotes": "v1.2.1 Stability & DevOps Release: Added signing-certificate mismatch pre-check before APK install (prevents package conflict surprises), 1-tap backup inside the Update sheet, and zero-error Termux automation scripts (termux-setup-keystore.sh & termux-release.sh)."
+  "releaseNotes": "v1.3.0 Premium SaaS Redesign & Realistic Athletic Tutor: Complete Hevy/Fitbod/Ladder-inspired dark-mode UI overhaul (soft rounded surfaces, clean typography, floating pill nav, refined muscle badges) + Realistic Athletic Male & Female 60 FPS Animator (natural skin shading, dark sportswear, anatomical crimson muscle fiber overlays & realistic 3D gym equipment)."
 }

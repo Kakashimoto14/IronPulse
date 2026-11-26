@@ -2,11 +2,11 @@
   'use strict';
 
   function fatiguePalette(val, isSelected) {
-    if (isSelected) return { hi: '#FFFFFF', mid: '#F4F4F2', lo: '#B4BAC4', stroke: '#E11D2E', lw: 2.0 };
-    if (val >= 65) return { hi: '#FF4D5E', mid: '#E11D2E', lo: '#7A0D18', stroke: '#15171A', lw: 1.1 };
-    if (val >= 30) return { hi: '#F59E0B', mid: '#D97706', lo: '#783B05', stroke: '#15171A', lw: 1.1 };
-    if (val > 0) return { hi: '#4ADE80', mid: '#22C55E', lo: '#14532D', stroke: '#15171A', lw: 1.1 };
-    return { hi: '#B4BCC8', mid: '#7E8694', lo: '#3D434E', stroke: '#15171A', lw: 1.0 };
+    if (isSelected) return { hi: '#FF6B66', mid: '#FF3B30', lo: '#9E1418', stroke: '#F8FAFC', lw: 1.8 };
+    if (val >= 65) return { hi: '#FF5660', mid: '#D91E32', lo: '#820D1A', stroke: '#1C1410', lw: 1.05 };
+    if (val >= 30) return { hi: '#FBBF24', mid: '#D97706', lo: '#783B05', stroke: '#1C1410', lw: 1.05 };
+    if (val > 0) return { hi: '#34D399', mid: '#10B981', lo: '#065F46', stroke: '#1C1410', lw: 1.05 };
+    return { hi: '#E4BEA4', mid: '#C89B7F', lo: '#8E624A', stroke: '#1C1410', lw: 0.95 };
   }
 
   // Draw a sculpted polygonal/bezier anatomical muscle belly with studio lighting & fiber striations
@@ -182,14 +182,14 @@
     ctx.beginPath();
     ctx.ellipse(W * 0.5, H * 0.095, isF ? 10.5 : 11.8, 14.5, 0, 0, Math.PI * 2);
     var hg = ctx.createLinearGradient(W * 0.42, H * 0.05, W * 0.58, H * 0.14);
-    hg.addColorStop(0, '#9DA5B2');
-    hg.addColorStop(0.6, '#656D7A');
-    hg.addColorStop(1, '#2D323B');
+    hg.addColorStop(0, '#E8C5AD');
+    hg.addColorStop(0.6, '#CE9F83');
+    hg.addColorStop(1, '#8E6149');
     ctx.fillStyle = hg;
     ctx.fill(); ctx.stroke();
 
     // Neck column
-    ctx.fillStyle = '#555C68';
+    ctx.fillStyle = '#B88A6F';
     ctx.fillRect(W * 0.455, H * 0.145, W * 0.09, H * 0.055);
 
     // Base structural torso/pelvis/knee/ankle connector so no gaps show between muscle groups
@@ -208,7 +208,7 @@
       // Hand
       ctx.beginPath();
       ctx.ellipse(W * (0.5 + s * 0.305 * sw), H * 0.615, 4.5, 7, s * 0.15, 0, Math.PI * 2);
-      ctx.fillStyle = '#6A7280';
+      ctx.fillStyle = '#C89B7F';
       ctx.fill(); ctx.stroke();
       // Knee tendon cap
       ctx.beginPath();
@@ -218,7 +218,7 @@
       // Foot
       ctx.beginPath();
       ctx.ellipse(W * (0.5 + s * 0.105 * hw), H * 0.945, 7, 4.2, s * 0.25, 0, Math.PI * 2);
-      ctx.fillStyle = '#555C68';
+      ctx.fillStyle = '#B88A6F';
       ctx.fill(); ctx.stroke();
     });
 

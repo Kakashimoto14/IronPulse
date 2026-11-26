@@ -1,5 +1,9 @@
 # IronPulse Changelog
 
+## v1.3.0
+- **Premium Fitness SaaS UI/UX Overhaul:** Complete visual redesign inspired by Hevy, Fitbod, and Ladder—soft elevated dark cards (`#090A0E` / `#12141B`), `14–22px` rounded geometry, glass-blur floating bottom navigation pill, bottom-sheet drag handles, clean humanist typography, and restrained soft-tinted muscle badges.
+- **Realistic Athletic Human Animator (`rig-renderer.js` v3.0 & `bodymap.js` v3.0):** Replaced geometric robot coloring with warm athletic skin shading, dark sportswear (gym shorts + female athletic top), 3/4 foreshortened Olympic barbells/benches/cable towers, and anatomical crimson-red muscle fiber overlays strictly on targeted muscles.
+
 ## v1.2.1
 - **Signing Key Conflict Guard:** `IronPulseBridge.getSigningSha256()` + `scripts/build.sh` now stamp and compare APK signing SHA-256 fingerprints before launch, displaying a clear 1-tap backup prompt if signing keys differ instead of an unexplained Android package conflict.
 - **Zero-Error Termux Automation (`scripts/termux-setup-keystore.sh` & `scripts/termux-release.sh`):** 1-command permanent production keystore generator for Termux and 1-command Git sync/commit/tag/push script that never wipes `.git` or loses `origin`.

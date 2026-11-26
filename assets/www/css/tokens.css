@@ -1,38 +1,43 @@
 :root {
-  /* Anti-Slop Flat Industrial Athletic Palette — Zero AI Gradients */
-  --bg-iron: #0B0C0E;
-  --bg-plate: #15171A;
-  --bg-knurl: #1E2126;
-  --bg-elevated: #23272E;
-  --line-steel: #2B2F36;
-  --line-strong: #3B4049;
+  /* Premium Dark-Mode Fitness SaaS Palette (Hevy / Fitbod / Ladder / WHOOP inspired) */
+  --bg-iron: #090A0E;
+  --bg-plate: #12141B;
+  --bg-knurl: #1A1D26;
+  --bg-elevated: #222633;
+  --line-steel: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.14);
 
-  --ink-chalk: #F4F4F2;
-  --ink-dim: #C7CBD1;
-  --ink-slate: #8E95A0;
-  --ink-muted: #5F6672;
+  --ink-chalk: #F8FAFC;
+  --ink-dim: #CBD5E1;
+  --ink-slate: #8B95A7;
+  --ink-muted: #5C6578;
 
-  --signal-crimson: #E11D2E;
-  --signal-crimson-dim: #461217;
-  --signal-amber: #D97706;
-  --signal-amber-dim: #3D260A;
-  --signal-olive: #22C55E;
-  --signal-olive-dim: #10331D;
-  --signal-cobalt: #2563EB;
-  --signal-cobalt-dim: #102145;
+  /* Restrained, High-Contrast Semantic Accents */
+  --signal-crimson: #FF3B30;
+  --signal-crimson-hover: #FF5147;
+  --signal-crimson-dim: rgba(255, 59, 48, 0.14);
+  --signal-amber: #F59E0B;
+  --signal-amber-dim: rgba(245, 158, 11, 0.14);
+  --signal-olive: #10B981;
+  --signal-olive-dim: rgba(16, 185, 129, 0.14);
+  --signal-cobalt: #3B82F6;
+  --signal-cobalt-dim: rgba(59, 130, 246, 0.14);
 
-  /* Typography */
-  --font-display: 'Barlow Condensed', 'Roboto Condensed', 'Arial Narrow', 'DIN Condensed', system-ui, sans-serif;
-  --font-body: 'Inter', 'Roboto', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
+  /* Clean Modern SaaS Typography (Humanist Sans + Tabular Numerals) */
+  --font-display: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
 
-  /* Motion & Layout */
+  /* Motion & Premium Geometry */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-snap: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --dock-h: 68px;
+  --ease-snap: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --radius-xs: 8px;
+  --radius-sm: 14px;
+  --radius-md: 20px;
+  --radius-pill: 999px;
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 14px 36px rgba(0, 0, 0, 0.48);
+  --dock-h: 72px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
