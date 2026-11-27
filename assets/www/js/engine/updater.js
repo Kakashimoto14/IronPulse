@@ -1,8 +1,8 @@
 (function (root) {
   'use strict';
 
-  var FALLBACK_VERSION = '2.1.0';
-  var FALLBACK_CODE = 20100;
+  var FALLBACK_VERSION = '2.2.0';
+  var FALLBACK_CODE = 20200;
   var FALLBACK_REPO = 'Kakashimoto14/IronPulse';
 
   var listeners = [];

@@ -78,7 +78,7 @@
     var bgMode = (root.IronPulse3D && root.IronPulse3D.getGlobalBackdrop()) || 'dark';
     return '<div class="explorer-3d-stage ' + (bgMode === 'light' ? 'studio-light' : '') + '">' +
       '<canvas id="' + prefix + '-3d-canvas"></canvas>' +
-      '<div class="orbit-hint">↻ DRAG 360° • TAP MUSCLE</div>' +
+      '<div class="orbit-hint">↻ DRAG 360° • PINCH ZOOM • TAP</div>' +
       '<button type="button" class="cam-pill" data-' + prefix + '-bg style="position:absolute;top:10px;right:10px;background:rgba(9,10,14,0.72);color:#F8FAFC;border:1px solid rgba(255,255,255,0.12);">' + (bgMode === 'light' ? 'DARK BG' : 'STUDIO BG') + '</button>' +
       '<div class="cam-bar-3d">' +
         '<div class="cam-pill-group">' +
@@ -101,8 +101,8 @@
       mode: 'explorer',
       initialYaw: 0,
       initialPitch: 2,
-      initialDist: 2.48,
-      targetY: 0.94,
+      initialDist: 3.75,
+      targetY: 0.90,
       getConfig: function () {
         return {
           sex: state.profile.sex,
@@ -1093,9 +1093,9 @@
             '<div class="tutor-controls">' +
               '<button type="button" id="modal-play-btn" class="btn btn-secondary btn-sm btn-tactile">PAUSE</button>' +
               '<div class="speed-group">' +
-                '<button type="button" class="speed-btn" data-mcam="0">FRONT</button>' +
-                '<button type="button" class="speed-btn active" data-mcam="36">3/4</button>' +
-                '<button type="button" class="speed-btn" data-mcam="90">SIDE</button>' +
+                '<button type="button" class="speed-btn" data-mcam="front">FRONT</button>' +
+                '<button type="button" class="speed-btn active" data-mcam="threeq">3/4</button>' +
+                '<button type="button" class="speed-btn" data-mcam="side">SIDE</button>' +
               '</div>' +
               '<div class="speed-group">' +
                 '<button type="button" class="speed-btn ' + (stMode === 'sculpt' ? 'active' : '') + '" data-mstyle="sculpt">3D</button>' +
@@ -1236,7 +1236,7 @@
           b.onclick = function () {
             document.querySelectorAll('#modal-body [data-mcam]').forEach(function (x) { x.classList.remove('active'); });
             b.classList.add('active');
-            if (loop.setCameraAngle) loop.setCameraAngle(Number(b.getAttribute('data-mcam')), 10);
+            if (loop.setPresetView) loop.setPresetView(b.getAttribute('data-mcam'));
             Native.vibrateLight();
           };
         });

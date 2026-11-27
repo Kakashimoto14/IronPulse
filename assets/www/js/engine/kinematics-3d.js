@@ -110,14 +110,14 @@
   // All 33 Exercise 3D Pose Profiles (camera: [yawDeg, pitchDeg, dist, targetY])
   var PROFILES = {
     bench_press: {
-      cam: [38, 18, 2.55, 0.72], bench: 'flat', ground: false,
-      start: sym({ pelvis: [-90,0,0], pos:[0,-0.40,-0.12], arm:[0,-82,12], elb:[0,-8,0], hip:[28,0,0], knee:[72,0,0] }),
-      peak:  sym({ pelvis: [-90,0,0], pos:[0,-0.40,-0.12], arm:[0,-20,-6], elb:[0,-88,0], hip:[28,0,0], knee:[72,0,0] })
+      cam: [54, 18, 3.20, 0.68], camPresets: { front: [132, 22], threeq: [54, 18], side: [90, 12] }, bench: 'flat', ground: false,
+      start: sym({ pelvis: [-90,0,0], pos:[0,-0.44,-0.10], arm:[0,-82,10], elb:[0,-8,0], hip:[34,0,0], knee:[58,0,0] }),
+      peak:  sym({ pelvis: [-90,0,0], pos:[0,-0.44,-0.10], arm:[0,-22,-4], elb:[0,-86,0], hip:[34,0,0], knee:[58,0,0] })
     },
     incline_press: {
-      cam: [36, 16, 2.55, 0.92], bench: 'incline', ground: false,
-      start: sym({ pelvis: [-54,0,0], pos:[0,-0.32,-0.10], arm:[0,-72,48], elb:[0,-12,0], hip:[-12,0,0], knee:[78,0,0] }),
-      peak:  sym({ pelvis: [-54,0,0], pos:[0,-0.32,-0.10], arm:[0,-18,16], elb:[0,-86,0], hip:[-12,0,0], knee:[78,0,0] })
+      cam: [48, 16, 3.25, 0.88], camPresets: { front: [128, 20], threeq: [48, 16], side: [90, 12] }, bench: 'incline', ground: false,
+      start: sym({ pelvis: [-54,0,0], pos:[0,-0.34,-0.10], arm:[0,-72,46], elb:[0,-12,0], hip:[-12,0,0], knee:[76,0,0] }),
+      peak:  sym({ pelvis: [-54,0,0], pos:[0,-0.34,-0.10], arm:[0,-18,16], elb:[0,-86,0], hip:[-12,0,0], knee:[76,0,0] })
     },
     pushup: {
       cam: [48, 16, 2.55, 0.44], ground: false,
@@ -279,7 +279,7 @@
   };
 
   function computeSkinMatrices(joints, profileName, u, isIdle) {
-    var prof = isIdle ? { start: IDLE_START, peak: IDLE_PEAK, cam: [0, 6, 2.75, 0.94], ground: true } : (PROFILES[profileName] || PROFILES.squat);
+    var prof = isIdle ? { start: IDLE_START, peak: IDLE_PEAK, cam: [0, 2, 3.72, 0.90], ground: true } : (PROFILES[profileName] || PROFILES.squat);
     var wave = cycleWave(u % 1);
     var p = wave.p;
 

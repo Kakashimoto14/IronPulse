@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "versionCode": 20100,
-  "tag": "v2.1.0",
+  "version": "2.2.0",
+  "versionCode": 20200,
+  "tag": "v2.2.0",
   "repo": "Kakashimoto14/IronPulse",
-  "releaseNotes": "v2.1.0 Heroic 3D Anatomy & Lyfta-Grade Exercise UX: Re-sculpted Muscular Male & Hourglass Athletic Female 3D meshes with complete hands/forearms (zero clipping) and silk-smooth analytical SDF normals, per-pixel razor-sharp sportswear hems & anatomical muscle contours (zero jagged edges), Vermilion Primary + Indigo-Blue Secondary muscle contrast, eye-level heroic framing, Light/Dark Studio backdrop toggle, Exercise Favorites, and About/History/Progress tabs inside every exercise."
+  "releaseNotes": "v2.2.0 Full-Body 3D Auto-Framing, 4-Bone Geodesic Skinning & Baked 3D Cavity Realism: Full head-to-toe 3D framing with pinch-to-zoom, organic sculpted pectorals & smooth male V-taper (zero blocky chest or hip pinch), 10-pass geodesic 4-bone GPU skinning (eliminates armpit spikes & hip tearing completely), baked 3D SDF Ambient Occlusion for deep anatomical muscle shadowing, and smart exercise camera presets."
 }

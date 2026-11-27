@@ -1,5 +1,11 @@
 # IronPulse Changelog
 
+## v2.2.0
+- **Full-Body 3D Auto-Framing & Pinch-to-Zoom (`webgl-3d.js`, `app.js`):** Adjusted 3D camera distance (`3.75m`, `34°` FOV) and aspect-ratio compensation so the full head-to-sneakers body and barbell plates fit cleanly inside every viewport without cropping, plus two-finger pinch-to-zoom.
+- **Zero Armpit Spikes / Zero Hip Tearing (4-Bone GPU Skinning + 10-Pass Geodesic Weight Diffusion):** Replaced hard coordinate branch cutoffs with continuous nearest-bone softmin weights diffused across 10 mesh-graph Laplacian passes, mathematically keeping max posed edge length under 5.5cm even at 82° Bench Press flexion.
+- **Organic Anatomical Re-Sculpt & Baked 3D Cavity AO:** Removed blocky rectangular chest primitives and male waist-hip shelves in favor of smooth organic swept pectorals, continuous athletic obliques, natural integrated abs, and multi-scale SDF Ambient Occlusion baked per vertex for studio-grade muscle valley depth.
+- **Smart Exercise Camera Presets:** Lying movements (Bench Press, Incline Press) now use flattering upper-chest/3/4/side camera presets instead of pointing up from the foot of the bench.
+
 ## v2.1.0
 - **Heroic Muscular Male & Hourglass Curvy Female 3D Sculpt Overhaul:** Re-engineered both watertight 3D meshes (`21,940` tris Male / `18,008` tris Female) with wider bounding volumes (100% complete hands & forearms, zero clipping), silk-smooth analytical SDF gradient normals, square-cut male pectorals, deep spinal furrow, cannonball deltoids, sweeping quads/calves, and feminine hourglass waist, sculpted glutes, athletic bust, and flowing ponytail.
 - **Per-Pixel 4K Sportswear & Anatomical Muscle Shader (`webgl-3d.js`):** Replaced vertex-grid clothing and box-cut muscle stripes with smooth per-pixel `smoothstep` hems (zero jagged shorts edges!) and curved anatomical muscle silhouettes (fan-shaped pectorals, teardrop delts, sculpted 6-pack abs) rendered with Lyfta-grade Vermilion-Red Primary + Electric Indigo-Blue Secondary contrast.
