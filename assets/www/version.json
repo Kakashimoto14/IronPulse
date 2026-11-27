@@ -1,7 +1,7 @@
 {
-  "version": "2.2.0",
-  "versionCode": 20200,
-  "tag": "v2.2.0",
+  "version": "3.0.0",
+  "versionCode": 30000,
+  "tag": "v3.0.0",
   "repo": "Kakashimoto14/IronPulse",
-  "releaseNotes": "v2.2.0 Full-Body 3D Auto-Framing, 4-Bone Geodesic Skinning & Baked 3D Cavity Realism: Full head-to-toe 3D framing with pinch-to-zoom, organic sculpted pectorals & smooth male V-taper (zero blocky chest or hip pinch), 10-pass geodesic 4-bone GPU skinning (eliminates armpit spikes & hip tearing completely), baked 3D SDF Ambient Occlusion for deep anatomical muscle shadowing, and smart exercise camera presets."
+  "releaseNotes": "v3.0.0 Studio Avatars & Biomechanical IK Engine: brand-new skinned glTF 2.0 (.glb) male & female athletes (27-bone rig with clavicles, finger/thumb/toe joints, 30k-vertex QEM-optimised meshes, baked AO), analytic 2-bone IK with pole vectors driving all 41 exercises from world-space constraints (hands locked to bars & handles, feet planted, benches fitted flush to the skinned body), per-pixel anatomical muscle map with crisp anti-aliased borders and fibre shading (Primary vermilion, Secondary indigo, Stabilizers cyan), key/fill/rim studio lighting with soft contact shadows, tight view-dependent auto-framing, and an automated biomechanics QA suite that verifies every rep frame for both sexes."
 }

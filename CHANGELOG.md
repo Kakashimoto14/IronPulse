@@ -1,5 +1,26 @@
 # IronPulse Changelog
 
+## v3.0.0 — Studio Avatars & Biomechanical IK Engine
+- **New skinned glTF 2.0 athletes (`models/ironpulse-{male,female}.glb`, embedded as `assets/www/js/data/avatar-*.js`):** The v2 marching-cubes "clay" meshes are retired. A new offline asset pipeline (`tools/avatar/`) sculpts each body from ~160 anatomical primitives: three deltoid heads, a clavicular/sternal pectoral split, lat wings, a rectus abdominis grid, obliques, erectors, the quad sweep with VMO teardrop, two-head calves, real fingers and thumbs, sneakers with cupsoles, and a ponytail and sports bra for the female athlete. The pipeline meshes at 4.5 mm, diffuses skin weights across the surface, decimates with quadric error metrics to 30k vertices, bakes hemisphere AO and exports standard skinned `.glb` files (27-bone rig with clavicles, finger/thumb/toe joints and KHR_mesh_quantization normals).
+- **Zero-dependency glTF loader (`gltf-loader.js`):** Parses `.glb` offline (no Three.js or CDN needed). It maps native, Mixamo and MPFB/Rigify bone names onto the IronPulse rig, so a future CC0 studio model can be swapped in.
+- **Biomechanical IK motion engine (`kinematics-3d.js`, rewritten):** Hand-guessed Euler poses are replaced by world-space constraints solved every frame with analytic 2-bone IK and pole/aim vectors. Hands stay locked to bars, handles, ropes and pads, and feet stay planted with flat soles. Benches, seats, knee pads and steps are fitted to the skinned mesh so backs and glutes rest flush. All 41 exercises have dedicated clips, e.g.:
+  - **Presses:** vertical-forearm bench and incline paths with about 52–56° elbow tuck.
+  - **Overhead press:** bar path held over midfoot.
+  - **Lateral raise:** scapular-plane raise.
+  - **Face pull:** finishes in external rotation.
+  - **Pulls:** dead-hang to chin-over-bar pull-ups and chin-ups.
+  - **Rows:** 48° hinge rows and a bench-supported one-arm row.
+  - **Squats and lunges:** below-parallel squats with the bar over midfoot, a true RDL hinge, a shin-grazing deadlift, Bulgarian split squat and pistol.
+  - **Arm wrestling:** anchored-elbow pronation, cupping, rising, back- and side-pressure.
+  - **Athletic and combat:** KB hip snap with straight arms, a box jump with landing and step-down, and a rear-foot-pivot cross with the guard hand pinned.
+  - **Core:** pelvic-curl leg raise and a hollow forearm plank.
+- **Studio renderer (`webgl-3d.js`):** Per-pixel anatomical muscle map generated from the avatar's region table, with anti-aliased borders, muscle seams and fibre shading. Primary is Vermilion `#F43A26`, Secondary is Indigo `#4F6BFF` and Stabilizers are muted cyan. Also adds key, fill and rim lights with a hemisphere ambient and baked AO, ACES tone-mapping, soft contact shadows, materialised equipment (hex dumbbells, Olympic bar with collars, cable towers and rope, AW table with peg and strap), and tight view-dependent auto-framing over the whole rep so head, feet and plates are never cropped.
+- **Automated biomechanics QA (`scripts/biomech-check.js`, wired into `qa-check.js`):** 41 exercises × male/female × 48 frames. It CPU-skins the shipped mesh and asserts:
+  - grip lock ≤ 6 mm, rigid bone lengths, and planted feet with no skating;
+  - no penetration of the floor, benches or plates;
+  - flush support contact.
+  - **Coaching rules:** forearm verticality, elbow tuck, depth below parallel, bar or load over midfoot, pinned upper arms, plank line, RDL knee limit, straight-arm KB, anchored AW elbow, face-pull external rotation, lateral-raise height, pelvic curl, and guard hand on the cheek.
+
 ## v2.2.0
 - **Full-Body 3D Auto-Framing & Pinch-to-Zoom (`webgl-3d.js`, `app.js`):** Adjusted 3D camera distance (`3.75m`, `34°` FOV) and aspect-ratio compensation so the full head-to-sneakers body and barbell plates fit cleanly inside every viewport without cropping, plus two-finger pinch-to-zoom.
 - **Zero Armpit Spikes / Zero Hip Tearing (4-Bone GPU Skinning + 10-Pass Geodesic Weight Diffusion):** Replaced hard coordinate branch cutoffs with continuous nearest-bone softmin weights diffused across 10 mesh-graph Laplacian passes, mathematically keeping max posed edge length under 5.5cm even at 82° Bench Press flexion.

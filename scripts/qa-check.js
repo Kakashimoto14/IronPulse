@@ -108,14 +108,40 @@ assert(manifestXml.includes('IronPulseWidgetProvider'), 'Widget provider not reg
 console.log('[PASS] Native Android Home Screen Widget & Analytics Charts verified');
 
 
-// 6. Verify v2.0.0 Real 3D WebGL Sculpted Meshes & 3D Kinematics Coverage
-const Kin3D = require('../assets/www/js/engine/kinematics-3d.js');
-assert(fs.existsSync('assets/www/js/data/mesh-male.js'), 'Missing 3D male mesh');
-assert(fs.existsSync('assets/www/js/data/mesh-female.js'), 'Missing 3D female mesh');
+// 6. Verify v3.0.0 skinned glTF avatars, IK motion engine & biomechanics
+global.window = undefined;
+assert(fs.existsSync('assets/www/js/data/avatar-male.js'), 'Missing glTF male avatar');
+assert(fs.existsSync('assets/www/js/data/avatar-female.js'), 'Missing glTF female avatar');
 assert(fs.existsSync('assets/www/js/engine/webgl-3d.js'), 'Missing WebGL 3D engine');
+assert(fs.existsSync('assets/www/js/engine/gltf-loader.js'), 'Missing glTF loader');
+const indexHtml = fs.readFileSync('assets/www/index.html', 'utf8');
+for (const f of ['js/data/avatar-male.js', 'js/data/avatar-female.js', 'js/engine/gltf-loader.js', 'js/engine/kinematics-3d.js', 'js/engine/webgl-3d.js']) {
+  assert(indexHtml.includes('src="' + f + '"'), 'index.html does not load ' + f);
+}
+assert(!/src="https?:\/\//.test(indexHtml), 'External script/CDN reference found in index.html (must stay 100% offline)');
+require('../assets/www/js/data/avatar-male.js');
+require('../assets/www/js/data/avatar-female.js');
+const GLTF = require('../assets/www/js/engine/gltf-loader.js');
+const Kin3D = require('../assets/www/js/engine/kinematics-3d.js');
+for (const sex of ['male', 'female']) {
+  const av = GLTF.getAvatar(sex);
+  assert(av && av.nVerts > 10000 && av.nVerts <= 65535, sex + ' avatar vertex count out of range: ' + (av && av.nVerts));
+  assert(Object.keys(av.head).length === GLTF.RIG_BONES.length, sex + ' avatar is missing rig bones');
+  assert(av.meta && av.meta.regions && av.meta.regions.length >= 20, sex + ' avatar is missing the muscle region table');
+  for (let i = 0; i < av.nVerts; i++) {
+    const w = av.weights[i * 4] + av.weights[i * 4 + 1] + av.weights[i * 4 + 2] + av.weights[i * 4 + 3];
+    if (Math.abs(w - 1) > 0.02) throw new Error(sex + ' avatar has unnormalised skin weights at vertex ' + i);
+  }
+}
 for (const ex of Data.EXERCISES) {
   assert(Kin3D.PROFILES[ex.kinematics], 'Missing 3D kinematics profile for ' + ex.id + ' (' + ex.kinematics + ')');
+  assert(Kin3D.EXERCISE_CLIPS[ex.id] && Kin3D.CLIPS[Kin3D.EXERCISE_CLIPS[ex.id]], 'Missing biomechanical 3D clip for ' + ex.id);
 }
-console.log('[PASS] 3D WebGL sculpted Male/Female meshes & all 3D exercise kinematics verified');
+console.log('[PASS] glTF 2.0 Male/Female avatars (' + GLTF.RIG_BONES.length + '-bone rig), offline asset wiring & ' + Data.EXERCISES.length + ' IK exercise clips verified');
+
+// 7. Biomechanics: IK constraint, collision & coaching-rule verification for every rep frame
+const Bio = require('./biomech-check.js');
+assert.strictEqual(Bio.failed, 0, Bio.failed + ' exercise rigs failed biomechanics QA (run node scripts/biomech-check.js for details)');
+console.log('[PASS] Biomechanics QA: ' + Bio.total + '/' + Bio.total + ' exercise rigs (41 exercises x Male/Female x 48 frames) - grip lock, planted feet, zero floor/bench/equipment clipping, coaching rules');
 
 console.log('=== ALL QA CHECKS PASSED ===');

@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#0b0d12;color:#cbd5e1;font:12px sans-serif}#g{display:grid;gap:4px;padding:4px}.c{position:relative;background:radial-gradient(#1b2030,#0b0d12)}.c span{position:absolute;left:6px;top:4px}</style></head><body><div id=g></div>
+<script src="../../assets/www/js/data/exercises.js"></script>
+<script src="../../assets/www/js/data/avatar-male.js"></script>
+<script src="../../assets/www/js/data/avatar-female.js"></script>
+<script src="../../assets/www/js/engine/gltf-loader.js"></script>
+<script src="../../assets/www/js/engine/kinematics-3d.js"></script>
+<script src="../../assets/www/js/engine/webgl-3d.js"></script>
+<script>
+window.renderSheet = function (o) {
+  var g = document.getElementById('g');
+  g.style.gridTemplateColumns = 'repeat(' + o.cols + ',' + o.w + 'px)';
+  var Data = window.IronPulseData || window.IronPulseExercises;
+  var EX = {}; (Data.EXERCISES || []).forEach(function (e) { EX[e.id] = e; });
+  if (o.style) IronPulse3D.setGlobalStyle(o.style);
+  o.cells.forEach(function (cell) {
+    var wrap = document.createElement('div'); wrap.className = 'c'; wrap.style.width = o.w + 'px'; wrap.style.height = o.h + 'px';
+    var cv = document.createElement('canvas'); cv.style.width = o.w + 'px'; cv.style.height = o.h + 'px'; cv.width = o.w; cv.height = o.h;
+    wrap.appendChild(cv); document.body.appendChild(wrap);
+    var ex = cell.ex === 'idle' ? null : EX[cell.ex];
+    var sc = IronPulse3D.create3DScene(cv, { mode: cell.ex === 'idle' ? 'explorer' : 'exercise', manual: true, preserve: true,
+      getConfig: function () { return { exercise: ex, sex: cell.sex || 'male', fatigueMap: cell.fat || {}, selectedMuscle: 'all' }; } });
+    if (cell.yaw != null) sc.setCameraAngle(cell.yaw, cell.pitch != null ? cell.pitch : 10);
+    if (cell.zoom) sc.setZoom(cell.zoom);
+    var r = sc.renderAt(cell.u);
+    var out = document.createElement('canvas'); out.width = o.w; out.height = o.h;
+    out.getContext('2d').drawImage(cv, 0, 0);
+    sc.stop(); wrap.remove();
+    var w2 = document.createElement('div'); w2.className = 'c'; w2.appendChild(out);
+    var lab = document.createElement('span'); lab.textContent = (cell.label || cell.ex) + ' u=' + cell.u.toFixed(2) + ' ' + (r ? r.phase : 'ERR'); w2.appendChild(lab);
+    g.appendChild(w2);
+  });
+  return true;
+};
+</script></body></html>

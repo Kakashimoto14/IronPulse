@@ -382,9 +382,9 @@ html, body {
 }
 
 .badge-stabilizer {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: var(--line-steel);
-  color: var(--ink-slate);
+  background: rgba(95, 183, 196, 0.1);
+  border-color: rgba(95, 183, 196, 0.42);
+  color: #8fd3dd;
 }
 
 .badge-olive {

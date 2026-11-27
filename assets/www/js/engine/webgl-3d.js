@@ -1,3 +1,8 @@
+/* IronPulse v3 — studio WebGL renderer (zero dependencies, fully offline).
+ * Skinned glTF avatar (23 bones, 4 weights/vertex), per-pixel anatomical muscle map generated from the
+ * avatar's region table (anti-aliased borders, fibre shading), key/fill/rim + hemisphere + baked AO,
+ * soft contact shadows, materialised gym equipment, auto-framing and 360° orbit / pinch / tap-pick.
+ */
 (function (root) {
   'use strict';
 
@@ -10,893 +15,484 @@
   var INDEX_TO_MUSCLE = {};
   Object.keys(MUSCLE_INDEX).forEach(function (k) { INDEX_TO_MUSCLE[MUSCLE_INDEX[k]] = k; });
 
-  var DECODED_CACHE = {};
-  function decodeMesh(sex) {
-    var key = sex === 'female' ? 'female' : 'male';
-    if (DECODED_CACHE[key]) return DECODED_CACHE[key];
-    var src = root.IronPulseMeshes && root.IronPulseMeshes[key];
-    if (!src) return null;
+  var MATERIALS = {
+    pad: [[0.085, 0.09, 0.11], 0.05, 18], frame: [[0.27, 0.29, 0.34], 0.55, 40], chrome: [[0.82, 0.85, 0.9], 0.95, 90],
+    plate: [[0.065, 0.07, 0.08], 0.12, 14], accent: [[0.957, 0.227, 0.149], 0.3, 40], cable: [[0.78, 0.8, 0.84], 0.7, 60],
+    rope: [[0.11, 0.11, 0.12], 0.05, 10], box: [[0.16, 0.17, 0.21], 0.08, 16], awtable: [[0.11, 0.12, 0.15], 0.2, 24],
+    awpad: [[0.72, 0.13, 0.11], 0.1, 20], strap: [[0.86, 0.2, 0.16], 0.1, 16], medball: [[0.17, 0.18, 0.21], 0.1, 14],
+    mat: [[0.13, 0.15, 0.2], 0.05, 10]
+  };
 
-    var binStr = atob(src.b64);
-    var len = binStr.length;
-    var bytes = new Uint8Array(len);
-    for (var i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
-    var dv = new DataView(bytes.buffer);
-    var magic = dv.getUint32(0, true);
-    var isV22 = (magic === 0x49503232);
-    var nVerts = isV22 ? dv.getUint32(4, true) : magic;
-    var nTris  = isV22 ? dv.getUint32(8, true) : dv.getUint32(4, true);
-    var off = isV22 ? 12 : 8;
-
-    var pos = new Float32Array(nVerts * 3);
-    for (var v = 0; v < nVerts * 3; v++) { pos[v] = dv.getInt16(off, true) / 10000.0; off += 2; }
-    var nor = new Float32Array(nVerts * 3);
-    for (var n = 0; n < nVerts * 3; n++) { nor[n] = dv.getInt8(off) / 127.0; off += 1; }
-
-    var ao = new Float32Array(nVerts);
-    var bones = new Float32Array(nVerts * 4);
-    var weights = new Float32Array(nVerts * 4);
-
-    if (isV22) {
-      for (var a = 0; a < nVerts; a++) ao[a] = bytes[off++] / 255.0;
-      for (var bi = 0; bi < nVerts * 4; bi++) bones[bi] = bytes[off++];
-      for (var wi = 0; wi < nVerts * 4; wi++) weights[wi] = bytes[off++] / 255.0;
-    } else {
-      off += nVerts * 2;
-      for (var k = 0; k < nVerts; k++) ao[k] = 1.0;
-      for (var j0 = 0; j0 < nVerts; j0++) bones[j0 * 4] = bytes[off++];
-      for (var j1 = 0; j1 < nVerts; j1++) bones[j1 * 4 + 1] = bytes[off++];
-      for (var jw = 0; jw < nVerts; jw++) {
-        var wv = bytes[off++] / 255.0;
-        weights[jw * 4] = wv;
-        weights[jw * 4 + 1] = 1.0 - wv;
-      }
-    }
-
-    var idx = new Uint16Array(nTris * 3);
-    for (var ti = 0; ti < nTris * 3; ti++) { idx[ti] = dv.getUint16(off, true); off += 2; }
-
-    var out = { nVerts: nVerts, nTris: nTris, pos: pos, nor: nor, ao: ao, bones: bones, weights: weights, idx: idx, joints: src.joints };
-    DECODED_CACHE[key] = out;
-    return out;
-  }
-
+  // ------------------------------------------------------------- matrices
   function m4Perspective(out, fovRad, aspect, near, far) {
-    var f = 1.0 / Math.tan(fovRad * 0.5);
-    var nf = 1.0 / (near - far);
-    out.fill(0);
-    out[0] = f / aspect; out[5] = f;
-    out[10] = (far + near) * nf; out[11] = -1;
-    out[14] = (2 * far * near) * nf;
+    var f = 1.0 / Math.tan(fovRad * 0.5), nf = 1.0 / (near - far);
+    out.fill(0); out[0] = f / aspect; out[5] = f; out[10] = (far + near) * nf; out[11] = -1; out[14] = 2 * far * near * nf;
     return out;
   }
-
-  function m4LookAt(out, ex, ey, ez, cx, cy, cz) {
-    var zx = ex - cx, zy = ey - cy, zz = ez - cz;
-    var zl = Math.hypot(zx, zy, zz) || 1;
+  function m4LookAt(out, e, c) {
+    var zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2], zl = Math.hypot(zx, zy, zz) || 1;
     zx /= zl; zy /= zl; zz /= zl;
-    var xx = zz, xy = 0, xz = -zx;
-    var xl = Math.hypot(xx, xy, xz) || 1;
-    xx /= xl; xz /= xl;
-    var yx = zy * xz - zz * xy;
-    var yy = zz * xx - zx * xz;
-    var yz = zx * xy - zy * xx;
-    out[0]=xx; out[1]=yx; out[2]=zx; out[3]=0;
-    out[4]=xy; out[5]=yy; out[6]=zy; out[7]=0;
-    out[8]=xz; out[9]=yz; out[10]=zz; out[11]=0;
-    out[12]=-(xx*ex+xy*ey+xz*ez);
-    out[13]=-(yx*ex+yy*ey+yz*ez);
-    out[14]=-(zx*ex+zy*ey+zz*ez);
-    out[15]=1;
+    var xx = zz, xy = 0, xz = -zx, xl = Math.hypot(xx, xz) || 1; xx /= xl; xz /= xl;
+    var yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0; out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+    out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+    out[12] = -(xx * e[0] + xy * e[1] + xz * e[2]); out[13] = -(yx * e[0] + yy * e[1] + yz * e[2]); out[14] = -(zx * e[0] + zy * e[1] + zz * e[2]); out[15] = 1;
     return out;
   }
-
   function m4Mul(out, a, b) {
     var r = new Float32Array(16);
-    for (var c = 0; c < 4; c++) {
-      for (var row = 0; row < 4; row++) {
-        r[c*4+row] = a[row]*b[c*4] + a[4+row]*b[c*4+1] + a[8+row]*b[c*4+2] + a[12+row]*b[c*4+3];
-      }
-    }
-    out.set(r);
-    return out;
+    for (var c = 0; c < 4; c++) for (var row = 0; row < 4; row++) r[c * 4 + row] = a[row] * b[c * 4] + a[4 + row] * b[c * 4 + 1] + a[8 + row] * b[c * 4 + 2] + a[12 + row] * b[c * 4 + 3];
+    out.set(r); return out;
   }
-
-  function m4Box(x, y, z, sx, sy, sz) {
-    var m = new Float32Array(16);
-    m[0]=sx; m[5]=sy; m[10]=sz; m[15]=1;
-    m[12]=x; m[13]=y; m[14]=z;
-    return m;
-  }
-
-  function m4Segment(ax, ay, az, bx, by, bz, r) {
-    var dx = bx - ax, dy = by - ay, dz = bz - az;
-    var len = Math.hypot(dx, dy, dz) || 0.001;
-    var ux = dx / len, uy = dy / len, uz = dz / len;
-    var rx = 0, ry = 1, rz = 0;
-    if (Math.abs(uy) > 0.92) { rx = 1; ry = 0; rz = 0; }
-    var tx = ry * uz - rz * uy, ty = rz * ux - rx * uz, tz = rx * uy - ry * ux;
-    var tl = Math.hypot(tx, ty, tz) || 1;
+  function m4Segment(a, b, r) {
+    var dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 1e-4;
+    var ux = dx / L, uy = dy / L, uz = dz / L, rx = 0, ry = 1, rz = 0;
+    if (Math.abs(uy) > 0.9) { rx = 1; ry = 0; }
+    var tx = ry * uz - rz * uy, ty = rz * ux - rx * uz, tz = rx * uy - ry * ux, tl = Math.hypot(tx, ty, tz) || 1;
     tx /= tl; ty /= tl; tz /= tl;
     var fx = uy * tz - uz * ty, fy = uz * tx - ux * tz, fz = ux * ty - uy * tx;
-    return new Float32Array([
-      tx*r, ty*r, tz*r, 0,
-      ux*len, uy*len, uz*len, 0,
-      fx*r, fy*r, fz*r, 0,
-      (ax+bx)*0.5, (ay+by)*0.5, (az+bz)*0.5, 1
-    ]);
+    return new Float32Array([tx * r, ty * r, tz * r, 0, ux * L, uy * L, uz * L, 0, fx * r, fy * r, fz * r, 0, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, 1]);
+  }
+  function m4Box(c, s, R) {
+    if (!R) return new Float32Array([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, c[0], c[1], c[2], 1]);
+    return new Float32Array([R[0] * s[0], R[3] * s[0], R[6] * s[0], 0, R[1] * s[1], R[4] * s[1], R[7] * s[1], 0, R[2] * s[2], R[5] * s[2], R[8] * s[2], 0, c[0], c[1], c[2], 1]);
   }
 
-  // 4-Bone GPU Skeletal Skinning Vertex Shader (glTF Standard — Zero Spikes!)
+  // ------------------------------------------------------------- shaders
   var VS_HUMAN = [
     'precision highp float;',
-    'attribute vec3 aPos;',
-    'attribute vec3 aNor;',
-    'attribute float aAO;',
-    'attribute vec4 aBones;',
-    'attribute vec4 aWeights;',
-    'uniform mat4 uViewProj;',
-    'uniform mat4 uBones[17];',
-    'varying vec3 vWorldPos;',
-    'varying vec3 vNormal;',
-    'varying vec3 vLocalPos;',
-    'varying float vAO;',
+    'attribute vec3 aPos; attribute vec3 aNor; attribute float aAO; attribute vec4 aBones; attribute vec4 aWeights;',
+    'uniform mat4 uViewProj; uniform mat4 uBones[27];',
+    'varying vec3 vWorldPos; varying vec3 vNormal; varying vec3 vRest; varying float vAO;',
     'void main() {',
-    '  int i0 = int(aBones.x + 0.5);',
-    '  int i1 = int(aBones.y + 0.5);',
-    '  int i2 = int(aBones.z + 0.5);',
-    '  int i3 = int(aBones.w + 0.5);',
-    '  vec4 w = aWeights;',
-    '  float wSum = max(w.x + w.y + w.z + w.w, 0.0001);',
-    '  w /= wSum;',
-    '  mat4 m0 = uBones[i0];',
-    '  mat4 m1 = uBones[i1];',
-    '  mat4 m2 = uBones[i2];',
-    '  mat4 m3 = uBones[i3];',
-    '  vec4 wp = (m0 * vec4(aPos, 1.0)) * w.x + (m1 * vec4(aPos, 1.0)) * w.y + (m2 * vec4(aPos, 1.0)) * w.z + (m3 * vec4(aPos, 1.0)) * w.w;',
-    '  vec3 wn = (mat3(m0) * aNor) * w.x + (mat3(m1) * aNor) * w.y + (mat3(m2) * aNor) * w.z + (mat3(m3) * aNor) * w.w;',
-    '  vWorldPos = wp.xyz;',
-    '  vNormal = normalize(wn);',
-    '  vLocalPos = aPos;',
-    '  vAO = aAO;',
+    '  vec4 w = aWeights / max(dot(aWeights, vec4(1.0)), 1e-4);',
+    '  mat4 m = uBones[int(aBones.x + 0.5)] * w.x + uBones[int(aBones.y + 0.5)] * w.y + uBones[int(aBones.z + 0.5)] * w.z + uBones[int(aBones.w + 0.5)] * w.w;',
+    '  vec4 wp = m * vec4(aPos, 1.0);',
+    '  vWorldPos = wp.xyz; vNormal = normalize(mat3(m) * aNor); vRest = aPos; vAO = aAO;',
     '  gl_Position = uViewProj * wp;',
     '}'
   ].join('\n');
 
-  // Studio PBR + Baked 3D Cavity Ambient Occlusion + Per-Pixel Anatomical Muscle & Sportswear Shader
-  var FS_HUMAN = [
-    'precision highp float;',
-    'varying vec3 vWorldPos;',
-    'varying vec3 vNormal;',
-    'varying vec3 vLocalPos;',
-    'varying float vAO;',
-    'uniform vec3 uCamPos;',
-    'uniform sampler2D uMuscleTex;',
-    'uniform float uStyleMode;',
-    'uniform float uIsFemale;',
-    'uniform float uPulse;',
-    'uniform float uPickMode;',
-    '',
-    'float classifyMuscle(vec3 p, float isF) {',
-    '  float ax = abs(p.x);',
-    '  float y = p.y;',
-    '  float z = p.z;',
-    '  float shX = mix(0.218, 0.165, isF);',
-    '  float shY = mix(1.445, 1.430, isF);',
-    '  float elX = shX + mix(0.205, 0.185, isF);',
-    '  float elY = shY - mix(0.175, 0.180, isF);',
-    '  float wrX = elX + mix(0.165, 0.155, isF);',
-    '  float wrY = elY - mix(0.162, 0.165, isF);',
-    '  float chestW = mix(0.188, 0.138, isF);',
-    '  float pelW = mix(0.166, 0.182, isF);',
-    '',
-    '  if (y > 1.535 || y < 0.095) return 0.0;',
-    '',
-    '  vec3 dSh = vec3(ax - shX, (y - (shY - 0.015)) * 0.88, z);',
-    '  float rDelt = mix(0.095, 0.074, isF);',
-    '  if (length(dSh) < rDelt && ax > shX * 0.74) {',
-    '    if (z > 0.024) return 3.0;',
-    '    if (z < -0.024) return 5.0;',
-    '    return 4.0;',
-    '  }',
-    '',
-    '  if (ax > shX + 0.022 && y > 0.88) {',
-    '    vec2 ua = vec2(elX - shX, elY - shY);',
-    '    float tUa = dot(vec2(ax - shX, y - shY), ua) / dot(ua, ua);',
-    '    vec2 fa = vec2(wrX - elX, wrY - elY);',
-    '    float tFa = dot(vec2(ax - elX, y - elY), fa) / dot(fa, fa);',
-    '    if (tUa >= 0.16 && tUa <= 0.98 && tFa < 0.04) return (z >= -0.004) ? 10.0 : 11.0;',
-    '    if (tFa >= 0.04 && tFa <= 0.92) {',
-    '      if (z < -0.004) return 14.0;',
-    '      return (tFa < 0.50) ? 12.0 : 13.0;',
-    '    }',
-    '    return 0.0;',
-    '  }',
-    '',
-    '  if (y >= 0.95 && y <= 1.535 && ax <= chestW * 1.15) {',
-    '    float trapTop = 1.535 - ax * 0.42;',
-    '    if (y > 1.435 && y < trapTop && ax < shX * 0.84 && z < 0.035) return 6.0;',
-    '    if (z < -0.015 && y >= 1.355 && y <= 1.515 && ax < 0.115 * (1.0 - (1.46 - y) * 1.6)) return 6.0;',
-    '    if (z >= 0.015) {',
-    '      float pecArcBot = 1.272 + 0.24 * pow(max(0.0, (ax - 0.092) / 0.10), 2.0) + 0.012 * exp(-ax * 48.0);',
-    '      float pecArcTop = 1.442 - 0.12 * ax;',
-    '      float pecMidSplit = 1.372 - 0.08 * ax;',
-    '      if (y >= pecArcBot && y <= pecArcTop && ax > 0.008 && ax < shX * 0.90) {',
-    '        return (y >= pecMidSplit) ? 1.0 : 2.0;',
-    '      }',
-    '      float abW = mix(0.076, 0.058, isF);',
-    '      if (y >= 0.985 && y < pecArcBot - 0.005) return (ax < abW) ? 15.0 : 16.0;',
-    '    }',
-    '    if (z < 0.015) {',
-    '      if (y >= 1.255 && y < 1.385 && ax < 0.092) return 8.0;',
-    '      if (y >= 1.115 && y < 1.395 && ax >= 0.078) return 7.0;',
-    '      if (y >= 0.975 && y < 1.255 && ax < 0.092) return 9.0;',
-    '    }',
-    '  }',
-    '',
-    '  if (y >= 0.81 && y < 0.995 && z < -0.015 && ax < pelW * 1.12) return 17.0;',
-    '  if (y >= 0.52 && y < 0.91 && ax < pelW * 1.30) return (z >= -0.006) ? 18.0 : 19.0;',
-    '  if (y >= 0.145 && y < 0.455 && ax < pelW * 1.25) return 20.0;',
-    '  return 0.0;',
-    '}',
-    '',
-    'void main() {',
-    '  vec3 p = vLocalPos;',
-    '  float mId = classifyMuscle(p, uIsFemale);',
-    '  if (uPickMode > 0.5) {',
-    '    gl_FragColor = vec4(mId / 255.0, 0.0, 0.0, 1.0);',
-    '    return;',
-    '  }',
-    '  vec3 N = normalize(vNormal);',
-    '  vec3 V = normalize(uCamPos - vWorldPos);',
-    '  vec4 mData = texture2D(uMuscleTex, vec2((mId + 0.5) / 32.0, 0.5));',
-    '  float activeAmt = mData.a;',
-    '',
-    '  float ax = abs(p.x);',
-    '  float y = p.y;',
-    '  float z = p.z;',
-    '',
-    '  // Per-pixel razor-sharp athletic sportswear masks',
-    '  float shortBot = mix(0.745, 0.735, uIsFemale);',
-    '  float shortTop = mix(0.988, 1.015, uIsFemale);',
-    '  float shortsMask = smoothstep(shortBot - 0.004, shortBot + 0.004, y) * (1.0 - smoothstep(shortTop - 0.004, shortTop + 0.004, y)) * (1.0 - smoothstep(0.24, 0.27, ax));',
-    '  float waistBand = smoothstep(shortTop - 0.024, shortTop - 0.019, y) * shortsMask;',
-    '  float braBot = 1.252;',
-    '  float braTop = 1.392 - 0.028 * exp(-ax * 26.0);',
-    '  float braMask = uIsFemale * smoothstep(braBot - 0.004, braBot + 0.004, y) * (1.0 - smoothstep(braTop - 0.004, braTop + 0.004, y)) * (1.0 - smoothstep(0.145, 0.162, ax));',
-    '  float shoeMask = 1.0 - smoothstep(0.082, 0.087, y);',
-    '  float soleMask = 1.0 - smoothstep(0.018, 0.023, y);',
-    '  float hairMask = uIsFemale * smoothstep(1.45, 1.48, y) * (1.0 - smoothstep(-0.082, -0.070, z));',
-    '',
-    '  // Combine baked 3D cavity AO with subtle anatomical line definition',
-    '  float cavity = mix(0.56, 1.0, vAO);',
-    '  float groove = 1.0;',
-    '  if (y > 0.99 && y < 1.43 && z > 0.04) {',
-    '    groove -= 0.11 * exp(-pow(ax / 0.009, 2.0));',
-    '    if (y < 1.26 && ax < 0.070) {',
-    '      float abLines = exp(-pow((y - 1.186) / 0.007, 2.0)) + exp(-pow((y - 1.116) / 0.007, 2.0)) + exp(-pow((y - 1.046) / 0.007, 2.0));',
-    '      groove -= mix(0.08, 0.04, uIsFemale) * abLines;',
-    '    }',
-    '    float pecCreaseY = 1.272 + 0.24 * pow(max(0.0, (ax - 0.092) / 0.10), 2.0);',
-    '    if (ax < 0.150 && ax > 0.015) groove -= 0.13 * exp(-pow((y - pecCreaseY) / 0.009, 2.0));',
-    '  }',
-    '  if (y > 0.98 && y < 1.44 && z < -0.04) groove -= 0.14 * exp(-pow(ax / 0.013, 2.0));',
-    '  float aoTotal = clamp(cavity * groove, 0.45, 1.0);',
-    '',
-    '  vec3 baseCol;',
-    '  float specPow = 32.0;',
-    '  float specStr = 0.30;',
-    '  if (uStyleMode < 0.5) {',
-    '    // Lyfta-grade sculpted silver-alabaster studio anatomy',
-    '    baseCol = vec3(0.81, 0.83, 0.87);',
-    '    float clothShow = shortsMask * (1.0 - activeAmt * 0.84);',
-    '    baseCol = mix(baseCol, mix(vec3(0.14, 0.16, 0.21), vec3(0.22, 0.25, 0.31), waistBand), clothShow);',
-    '    baseCol = mix(baseCol, vec3(0.15, 0.17, 0.22), braMask * (1.0 - activeAmt * 0.84));',
-    '    baseCol = mix(baseCol, vec3(0.17, 0.19, 0.25), shoeMask);',
-    '    baseCol = mix(baseCol, vec3(0.90, 0.92, 0.96), soleMask);',
-    '    baseCol = mix(baseCol, vec3(0.36, 0.39, 0.45), hairMask);',
-    '    specPow = 28.0; specStr = 0.34;',
-    '  } else {',
-    '    // Warm realistic athletic skin + charcoal sportswear',
-    '    baseCol = vec3(0.88, 0.68, 0.55);',
-    '    float clothShow = shortsMask * (1.0 - activeAmt * 0.74);',
-    '    baseCol = mix(baseCol, mix(vec3(0.09, 0.10, 0.14), vec3(0.18, 0.20, 0.26), waistBand), clothShow);',
-    '    baseCol = mix(baseCol, vec3(0.10, 0.11, 0.15), braMask * (1.0 - activeAmt * 0.74));',
-    '    baseCol = mix(baseCol, vec3(0.13, 0.15, 0.20), shoeMask);',
-    '    baseCol = mix(baseCol, vec3(0.94, 0.95, 0.97), soleMask);',
-    '    baseCol = mix(baseCol, vec3(0.12, 0.09, 0.08), hairMask);',
-    '    specPow = 30.0; specStr = 0.26;',
-    '  }',
-    '',
-    '  float fCoord = (mId == 1.0 || mId == 2.0) ? (p.y * 155.0 + ax * 42.0) : (p.x * 115.0 + p.y * 55.0 + p.z * 80.0);',
-    '  float fiber = 0.86 + 0.14 * sin(fCoord);',
-    '  vec3 activeCol = mData.rgb * fiber;',
-    '  vec3 albedo = mix(baseCol, activeCol, activeAmt * 0.90);',
-    '',
-    '  // Studio 3-Point PBR Lighting + Subsurface Wrap + Baked Cavity Occlusion + Crisp Rim',
-    '  vec3 L1 = normalize(vec3(0.45, 0.72, 0.74));',
-    '  vec3 L2 = normalize(vec3(-0.78, 0.32, -0.42));',
-    '  vec3 L3 = normalize(vec3(0.0, -0.30, 0.95));',
-    '  float ndl1 = max(dot(N, L1), 0.0);',
-    '  float wrap1 = max((dot(N, L1) + 0.38) / 1.38, 0.0);',
-    '  float ndl2 = max(dot(N, L2), 0.0);',
-    '  float ndl3 = max(dot(N, L3), 0.0);',
-    '  float hemi = 0.5 + 0.5 * N.y;',
-    '  vec3 H1 = normalize(L1 + V);',
-    '  float spec = pow(max(dot(N, H1), 0.0), specPow) * specStr * aoTotal;',
-    '  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);',
-    '',
-    '  vec3 sssTint = mix(vec3(0.24, 0.26, 0.30), vec3(0.36, 0.22, 0.17), uStyleMode);',
-    '  vec3 lighting = sssTint * (0.58 + 0.42 * hemi) + vec3(0.95, 0.92, 0.89) * mix(ndl1, wrap1, 0.34) + vec3(0.28, 0.34, 0.46) * ndl2 + vec3(0.16, 0.16, 0.18) * ndl3;',
-    '  vec3 col = albedo * lighting * aoTotal;',
-    '  col += vec3(1.0, 0.98, 0.95) * spec;',
-    '  col += mData.rgb * (activeAmt * (0.12 + 0.14 * uPulse));',
-    '  col += mix(vec3(0.70, 0.78, 0.92), mData.rgb, activeAmt * 0.55) * fresnel * 0.34 * aoTotal;',
-    '  col = col / (col + vec3(0.60));',
-    '  col = pow(max(col, vec3(0.0)), vec3(0.88));',
-    '  gl_FragColor = vec4(col, 1.0);',
-    '}'
-  ].join('\n');
+  function buildMuscleGLSL(regions) {
+    var lines = ['vec4 classify(vec3 p) {', '  vec3 q = vec3(abs(p.x), p.y, p.z);', '  float b1 = 1e5; float id1 = 0.0; float b2 = 1e5; vec3 L1 = vec3(0.0); vec3 l; float d;'];
+    function f(x) { var s = (+x).toFixed(5); return s.indexOf('.') < 0 ? s + '.0' : s; }
+    regions.forEach(function (rg) {
+      var R = rg.R, c = rg.c, r = rg.r;
+      lines.push('  l = vec3(dot(q - vec3(' + f(c[0]) + ',' + f(c[1]) + ',' + f(c[2]) + '), vec3(' + f(R[0]) + ',' + f(R[1]) + ',' + f(R[2]) + ')), dot(q - vec3(' + f(c[0]) + ',' + f(c[1]) + ',' + f(c[2]) + '), vec3(' + f(R[3]) + ',' + f(R[4]) + ',' + f(R[5]) + ')), dot(q - vec3(' + f(c[0]) + ',' + f(c[1]) + ',' + f(c[2]) + '), vec3(' + f(R[6]) + ',' + f(R[7]) + ',' + f(R[8]) + ')));');
+      lines.push('  d = ell(l, vec3(' + f(r[0]) + ',' + f(r[1]) + ',' + f(r[2]) + '));');
+      lines.push('  if (d < b1) { if (' + f(rg.m) + ' != id1) b2 = b1; b1 = d; id1 = ' + f(rg.m) + '; L1 = l / vec3(' + f(r[0]) + ',' + f(r[1]) + ',' + f(r[2]) + '); } else if (d < b2 && ' + f(rg.m) + ' != id1) { b2 = d; }');
+    });
+    lines.push('  gFiber = L1; gGap = b2 - b1;');
+    lines.push('  return vec4(id1, b1, b2, 0.0);', '}');
+    return lines.join('\n');
+  }
 
-  var VS_PROP = [
-    'precision highp float;',
-    'attribute vec3 aPos;',
-    'attribute vec3 aNor;',
-    'uniform mat4 uViewProj;',
-    'uniform mat4 uModel;',
-    'varying vec3 vWorldPos;',
-    'varying vec3 vNormal;',
-    'void main() {',
-    '  vec4 wp = uModel * vec4(aPos, 1.0);',
-    '  vWorldPos = wp.xyz;',
-    '  vNormal = normalize(mat3(uModel) * aNor);',
-    '  gl_Position = uViewProj * wp;',
-    '}'
-  ].join('\n');
+  function fsHuman(regions, hasDeriv, cloth, female) {
+    return [
+      hasDeriv ? '#extension GL_OES_standard_derivatives : enable' : '',
+      'precision highp float;',
+      'varying vec3 vWorldPos; varying vec3 vNormal; varying vec3 vRest; varying float vAO;',
+      'uniform vec3 uCamPos; uniform sampler2D uMuscleTex; uniform float uStyle; uniform float uPulse; uniform float uPick; uniform float uLight;',
+      'vec3 gFiber; float gGap;',
+      'float ell(vec3 l, vec3 r) { float k0 = length(l / r); float k1 = length(l / (r * r)); return k0 * (k0 - 1.0) / max(k1, 1e-5); }',
+      buildMuscleGLSL(regions),
+      'float aaw(float x) { ' + (hasDeriv ? 'return max(fwidth(x), 1e-4);' : 'return 0.0015;') + ' }',
+      'void main() {',
+      '  vec4 cls = classify(vRest);',
+      '  float inside = 1.0 - smoothstep(0.0, aaw(cls.y) * 1.5, cls.y);',
+      '  float mId = inside > 0.5 ? cls.x : 0.0;',
+      '  if (uPick > 0.5) { gl_FragColor = vec4(mId / 255.0, 0.0, 0.0, 1.0); return; }',
+      '  vec3 N = normalize(vNormal); vec3 V = normalize(uCamPos - vWorldPos);',
+      '  if (dot(N, V) < -0.2) N = -N;',
+      '  vec4 md = texture2D(uMuscleTex, vec2((cls.x + 0.5) / 32.0, 0.5));',
+      '  float act = md.a * inside;',
+      '  // seam between neighbouring muscle bellies (crisp, anti-aliased)',
+      '  float seam = 1.0 - smoothstep(0.0, 0.0012 + aaw(gGap) * 1.2, gGap) ;',
+      '  float y = vRest.y, ax = abs(vRest.x);',
+      '  float shorts = smoothstep(' + cloth.shortBot.toFixed(4) + ' - 0.003, ' + cloth.shortBot.toFixed(4) + ' + 0.003, y) * (1.0 - smoothstep(' + cloth.shortTop.toFixed(4) + ' - 0.003, ' + cloth.shortTop.toFixed(4) + ' + 0.003, y)) * (1.0 - step(0.265, ax));',
+      '  float band = shorts * smoothstep(' + (cloth.shortTop - 0.028).toFixed(4) + ', ' + (cloth.shortTop - 0.024).toFixed(4) + ', y);',
+      '  float bra = ' + (female ? '1.0' : '0.0') + ' * smoothstep(' + cloth.braBot.toFixed(4) + ' - 0.003, ' + cloth.braBot.toFixed(4) + ' + 0.003, y) * (1.0 - smoothstep(' + cloth.braTop.toFixed(4) + ' - 0.003, ' + cloth.braTop.toFixed(4) + ' + 0.003, y)) * (1.0 - step(0.155, ax));',
+      '  float shoe = 1.0 - smoothstep(' + (cloth.shoeTop - 0.004).toFixed(4) + ', ' + (cloth.shoeTop + 0.002).toFixed(4) + ', y);',
+      '  float sole = 1.0 - smoothstep(0.022, 0.027, y);',
+      '  float hair = ' + (female ? '1.0' : '0.0') + ' * smoothstep(' + (cloth.headTop - 0.115).toFixed(4) + ', ' + (cloth.headTop - 0.1).toFixed(4) + ', y + max(0.0, -vRest.z) * 0.9) * (1.0 - smoothstep(0.03, 0.05, vRest.z + (y - ' + (cloth.headTop - 0.05).toFixed(4) + ') * -0.6));',
+      '  hair = max(hair, ' + (female ? '1.0' : '0.0') + ' * step(vRest.z, -0.095) * step(' + (cloth.headTop - 0.3).toFixed(4) + ', y));',
+      '  vec3 base; float spec = 0.22; float shin = 28.0; float sss = 0.0;',
+      '  if (uStyle < 0.5) {',
+      '    base = vec3(0.80, 0.815, 0.85);',
+      '    base = mix(base, vec3(0.13, 0.145, 0.18), shorts * (1.0 - act * 0.8));',
+      '    base = mix(base, vec3(0.2, 0.22, 0.27), band * (1.0 - act));',
+      '    base = mix(base, vec3(0.13, 0.145, 0.18), bra * (1.0 - act * 0.8));',
+      '    base = mix(base, vec3(0.16, 0.175, 0.21), shoe); base = mix(base, vec3(0.55, 0.57, 0.62), sole * shoe);',
+      '    base = mix(base, vec3(0.32, 0.34, 0.39), hair);',
+      '    spec = 0.32; shin = 34.0;',
+      '  } else {',
+      '    base = vec3(0.80, 0.585, 0.46);',
+      '    base = mix(base, vec3(0.07, 0.075, 0.095), shorts * (1.0 - act * 0.7));',
+      '    base = mix(base, vec3(0.957, 0.227, 0.149), band * (1.0 - act));',
+      '    base = mix(base, vec3(0.075, 0.08, 0.1), bra * (1.0 - act * 0.7));',
+      '    base = mix(base, vec3(0.1, 0.11, 0.14), shoe); base = mix(base, vec3(0.62, 0.63, 0.66), sole * shoe);',
+      '    base = mix(base, vec3(0.1, 0.075, 0.06), hair);',
+      '    spec = 0.2; shin = 22.0; sss = 1.0 - max(max(shorts, bra), max(shoe, hair));',
+      '  }',
+      '  float fiber = 0.9 + 0.1 * sin((gFiber.y * 0.9 + gFiber.z * 0.6) * 46.0 + gFiber.x * 3.0);',
+      '  vec3 albedo = mix(base, md.rgb * fiber, act * 0.92);',
+      '  albedo *= 1.0 - seam * 0.22 * (0.35 + act);',
+      '  // studio lighting: key / fill / rim / hemisphere + baked AO',
+      '  vec3 Lk = normalize(vec3(0.55, 0.85, 0.75)); vec3 Lf = normalize(vec3(-0.85, 0.25, 0.35)); vec3 Lr = normalize(vec3(-0.2, 0.55, -1.0));',
+      '  float nk = dot(N, Lk); float dk = max(nk, 0.0); float wk = max((nk + 0.35) / 1.35, 0.0);',
+      '  float df = max(dot(N, Lf), 0.0); float hemi = 0.5 + 0.5 * N.y;',
+      '  float ao = mix(0.35, 1.0, vAO); ao = ao * ao;',
+      '  vec3 H = normalize(Lk + V); float sp = pow(max(dot(N, H), 0.0), shin) * spec;',
+      '  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);',
+      '  float rim = pow(max(dot(N, Lr), 0.0), 2.0) * (0.35 + 0.65 * fres);',
+      '  vec3 amb = mix(vec3(0.16, 0.17, 0.2), vec3(0.36, 0.38, 0.43), hemi) * mix(1.0, 1.25, uLight);',
+      '  vec3 lit = amb * ao + vec3(1.0, 0.95, 0.9) * mix(dk, wk, 0.25 + 0.3 * sss) * mix(0.55, 1.0, ao) * 1.05 + vec3(0.42, 0.5, 0.66) * df * 0.45 * ao;',
+      '  lit += vec3(0.6, 0.18, 0.1) * sss * 0.08 * (1.0 - dk);',
+      '  vec3 col = albedo * lit + vec3(1.0, 0.97, 0.94) * sp * ao + vec3(0.7, 0.8, 1.0) * rim * 0.45 * ao;',
+      '  col += md.rgb * act * (0.08 + 0.12 * uPulse);',
+      '  col = col * (2.51 * col + 0.03) / (col * (2.43 * col + 0.59) + 0.14);',
+      '  gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.92)), 1.0);',
+      '}'
+    ].join('\n');
+  }
 
-  var FS_PROP = [
-    'precision mediump float;',
-    'varying vec3 vWorldPos;',
-    'varying vec3 vNormal;',
-    'uniform vec3 uCamPos;',
-    'uniform vec3 uColor;',
-    'uniform float uMetal;',
-    'void main() {',
-    '  vec3 N = normalize(vNormal);',
-    '  vec3 V = normalize(uCamPos - vWorldPos);',
-    '  vec3 L1 = normalize(vec3(0.55, 0.80, 0.65));',
-    '  vec3 L2 = normalize(vec3(-0.7, 0.3, -0.5));',
-    '  float d1 = max(dot(N, L1), 0.0);',
-    '  float d2 = max(dot(N, L2), 0.0);',
-    '  vec3 H = normalize(L1 + V);',
-    '  float spec = pow(max(dot(N, H), 0.0), mix(18.0, 48.0, uMetal)) * mix(0.22, 0.72, uMetal);',
-    '  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * 0.25;',
-    '  vec3 col = uColor * (0.30 + 0.75 * d1 + 0.25 * d2) + vec3(0.95, 0.97, 1.0) * (spec + rim);',
-    '  gl_FragColor = vec4(col, 1.0);',
-    '}'
-  ].join('\n');
+  var VS_PROP = 'precision highp float; attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uViewProj; uniform mat4 uModel; varying vec3 vW; varying vec3 vN;' +
+    'void main(){ vec4 w = uModel * vec4(aPos,1.0); vW = w.xyz; vN = mat3(uModel) * aNor; gl_Position = uViewProj * w; }';
+  var FS_PROP = 'precision mediump float; varying vec3 vW; varying vec3 vN; uniform vec3 uCamPos; uniform vec3 uColor; uniform float uMetal; uniform float uShin; uniform float uLight;' +
+    'void main(){ vec3 N = normalize(vN); vec3 V = normalize(uCamPos - vW); if (dot(N,V) < 0.0) N = -N;' +
+    ' vec3 Lk = normalize(vec3(0.55,0.85,0.75)); vec3 Lf = normalize(vec3(-0.85,0.25,0.35)); vec3 Lr = normalize(vec3(-0.2,0.55,-1.0));' +
+    ' float dk = max(dot(N,Lk),0.0); float df = max(dot(N,Lf),0.0); float hemi = 0.5+0.5*N.y;' +
+    ' vec3 H = normalize(Lk+V); float sp = pow(max(dot(N,H),0.0), uShin) * mix(0.12, 1.1, uMetal);' +
+    ' float env = mix(0.0, 0.35, uMetal) * (0.5 + 0.5 * reflect(-V, N).y);' +
+    ' float rim = pow(1.0 - max(dot(N,V),0.0), 3.0) * 0.25;' +
+    ' vec3 c = uColor * (mix(vec3(0.16,0.17,0.2), vec3(0.34,0.36,0.41), hemi) * mix(1.0,1.3,uLight) + vec3(1.0,0.95,0.9)*dk*0.95 + vec3(0.42,0.5,0.66)*df*0.4) + vec3(1.0,0.98,0.95)*(sp+env) + vec3(0.7,0.8,1.0)*rim*0.6;' +
+    ' c = c*(2.51*c+0.03)/(c*(2.43*c+0.59)+0.14); gl_FragColor = vec4(pow(clamp(c,0.0,1.0), vec3(0.92)), 1.0); }';
 
-  function compileProgram(gl, vsSrc, fsSrc) {
-    function sh(type, src) {
-      var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { gl.deleteShader(s); return null; }
-      return s;
-    }
-    var vs = sh(gl.VERTEX_SHADER, vsSrc), fs = sh(gl.FRAGMENT_SHADER, fsSrc);
-    if (!vs || !fs) return null;
-    var p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+  var VS_FLOOR = 'precision highp float; attribute vec3 aPos; uniform mat4 uViewProj; uniform vec3 uCenter; uniform float uRad; varying vec2 vXZ;' +
+    'void main(){ vec3 p = vec3(aPos.x * uRad + uCenter.x, 0.0, aPos.z * uRad + uCenter.z); vXZ = p.xz; gl_Position = uViewProj * vec4(p,1.0); }';
+  var FS_FLOOR = 'precision highp float; varying vec2 vXZ; uniform vec3 uCenter; uniform float uRad; uniform vec4 uSh[12]; uniform float uLight;' +
+    'void main(){ float r = length(vXZ - uCenter.xz) / uRad; if (r > 1.0) discard;' +
+    ' float sh = 0.0; for (int i = 0; i < 12; i++) { vec4 s = uSh[i]; if (s.z <= 0.0) continue; float d = length(vXZ - s.xy) / s.z; sh += s.w * exp(-d*d*2.2); }' +
+    ' sh = clamp(sh, 0.0, 0.85);' +
+    ' vec3 base = mix(vec3(0.115,0.13,0.165), vec3(0.62,0.66,0.72), uLight);' +
+    ' float ring = smoothstep(0.985, 0.97, r) * smoothstep(0.93, 0.95, r);' +
+    ' vec3 c = base * (1.0 - 0.35 * r * r) * (1.0 - sh) + vec3(0.957,0.227,0.149) * ring * 0.12;' +
+    ' float a = smoothstep(1.0, 0.88, r); gl_FragColor = vec4(c, a); }';
+
+  function compile(gl, vs, fs) {
+    function sh(t, s) { var o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) { if (root.console) console.warn(gl.getShaderInfoLog(o)); return null; } return o; }
+    var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return null;
+    var p = gl.createProgram(); gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
     return gl.getProgramParameter(p, gl.LINK_STATUS) ? p : null;
   }
 
-  function uploadPropGeom(gl, pos, nor, idx) {
-    var bp = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bp); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
-    var bn = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bn); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW);
-    var bi = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bi); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
-    return { bp: bp, bn: bn, bi: bi, count: idx.length };
+  function geom(gl, pos, nor, idx) {
+    function b(t, a) { var o = gl.createBuffer(); gl.bindBuffer(t, o); gl.bufferData(t, a, gl.STATIC_DRAW); return o; }
+    return { p: b(gl.ARRAY_BUFFER, new Float32Array(pos)), n: b(gl.ARRAY_BUFFER, new Float32Array(nor)), i: b(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx)), count: idx.length };
   }
-
-  function createBoxGeom(gl) {
-    var faces = [
-      [[0,0,1],  [-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5]],
-      [[0,0,-1], [.5,-.5,-.5],[-.5,-.5,-.5],[-.5,.5,-.5],[.5,.5,-.5]],
-      [[1,0,0],  [.5,-.5,.5],[.5,-.5,-.5],[.5,.5,-.5],[.5,.5,.5]],
-      [[-1,0,0], [-.5,-.5,-.5],[-.5,-.5,.5],[-.5,.5,.5],[-.5,.5,-.5]],
-      [[0,1,0],  [-.5,.5,.5],[.5,.5,.5],[.5,.5,-.5],[-.5,.5,-.5]],
-      [[0,-1,0], [-.5,-.5,-.5],[.5,-.5,-.5],[.5,-.5,.5],[-.5,-.5,.5]]
-    ];
-    var pos = [], nor = [], idx = [];
-    faces.forEach(function (f, fi) {
-      var n = f[0];
-      for (var k = 1; k <= 4; k++) { pos.push(f[k][0], f[k][1], f[k][2]); nor.push(n[0], n[1], n[2]); }
-      var b = fi * 4;
-      idx.push(b, b+1, b+2, b, b+2, b+3);
+  function boxGeom(gl) {
+    var F = [[[0, 0, 1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[0, 0, -1], [1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]], [[1, 0, 0], [1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]],
+      [[-1, 0, 0], [-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]], [[0, 1, 0], [-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]], [[0, -1, 0], [-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]]];
+    var p = [], n = [], i = [];
+    F.forEach(function (f, k) { for (var j = 1; j <= 4; j++) { p.push(f[j][0] * 0.5, f[j][1] * 0.5, f[j][2] * 0.5); n.push(f[0][0], f[0][1], f[0][2]); } var b = k * 4; i.push(b, b + 1, b + 2, b, b + 2, b + 3); });
+    return geom(gl, p, n, i);
+  }
+  function cylGeom(gl, segs) {
+    var p = [], n = [], i = [];
+    for (var k = 0; k <= segs; k++) { var a = k / segs * Math.PI * 2, c = Math.cos(a), s = Math.sin(a); p.push(c, -0.5, s, c, 0.5, s); n.push(c, 0, s, c, 0, s); }
+    for (var j = 0; j < segs; j++) { var b = j * 2; i.push(b, b + 1, b + 3, b, b + 3, b + 2); }
+    [0.5, -0.5].forEach(function (yy) {
+      var c0 = p.length / 3; p.push(0, yy, 0); n.push(0, Math.sign(yy), 0);
+      for (var t = 0; t <= segs; t++) { var a = t / segs * Math.PI * 2; p.push(Math.cos(a), yy, Math.sin(a)); n.push(0, Math.sign(yy), 0); if (t) { if (yy > 0) i.push(c0, c0 + t, c0 + t + 1); else i.push(c0, c0 + t + 1, c0 + t); } }
     });
-    return uploadPropGeom(gl, pos, nor, idx);
+    return geom(gl, p, n, i);
+  }
+  function sphGeom(gl) {
+    var p = [], n = [], i = [], R = 14, S = 22;
+    for (var r = 0; r <= R; r++) for (var s = 0; s <= S; s++) {
+      var th = r / R * Math.PI, ph = s / S * Math.PI * 2, x = Math.sin(th) * Math.cos(ph), y = Math.cos(th), z = Math.sin(th) * Math.sin(ph);
+      p.push(x, y, z); n.push(x, y, z);
+    }
+    for (var a = 0; a < R; a++) for (var b = 0; b < S; b++) { var q = a * (S + 1) + b; i.push(q, q + S + 1, q + 1, q + 1, q + S + 1, q + S + 2); }
+    return geom(gl, p, n, i);
+  }
+  function discGeom(gl) {
+    var p = [0, 0, 0], i = [], S = 64;
+    for (var k = 0; k <= S; k++) { var a = k / S * Math.PI * 2; p.push(Math.cos(a), 0, Math.sin(a)); if (k) i.push(0, k, k + 1); }
+    return geom(gl, p, p.map(function () { return 0; }), i);
   }
 
-  function createCylGeom(gl, segs) {
-    var pos = [], nor = [], idx = [];
-    for (var i = 0; i <= segs; i++) {
-      var a = (i / segs) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-      pos.push(ca, -0.5, sa, ca, 0.5, sa); nor.push(ca, 0, sa, ca, 0, sa);
-    }
-    for (var j = 0; j < segs; j++) { var b = j * 2; idx.push(b, b+1, b+3, b, b+3, b+2); }
-    var tc = pos.length / 3; pos.push(0, 0.5, 0); nor.push(0, 1, 0);
-    for (var t = 0; t <= segs; t++) {
-      var a1 = (t / segs) * Math.PI * 2;
-      pos.push(Math.cos(a1), 0.5, Math.sin(a1)); nor.push(0, 1, 0);
-      if (t > 0) idx.push(tc, tc + t, tc + t + 1);
-    }
-    var bc = pos.length / 3; pos.push(0, -0.5, 0); nor.push(0, -1, 0);
-    for (var bt = 0; bt <= segs; bt++) {
-      var a2 = (bt / segs) * Math.PI * 2;
-      pos.push(Math.cos(a2), -0.5, Math.sin(a2)); nor.push(0, -1, 0);
-      if (bt > 0) idx.push(bc, bc + bt + 1, bc + bt);
-    }
-    return uploadPropGeom(gl, pos, nor, idx);
-  }
-
-  function uploadHumanMesh(gl, data) {
-    function makeBuf(arr) {
-      var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); return b;
-    }
-    var bi = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bi); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.idx, gl.STATIC_DRAW);
-    return {
-      pos: makeBuf(data.pos), nor: makeBuf(data.nor), ao: makeBuf(data.ao),
-      bones: makeBuf(data.bones), weights: makeBuf(data.weights),
-      idx: bi, count: data.idx.length, joints: data.joints
-    };
-  }
-
-  var globalStyle = 'sculpt';
-  var globalBackdrop = 'dark';
+  var globalStyle = 'sculpt', globalBackdrop = 'dark';
   function setGlobalStyle(st) { globalStyle = st === 'athlete' ? 'athlete' : 'sculpt'; }
   function getGlobalStyle() { return globalStyle; }
   function setGlobalBackdrop(b) { globalBackdrop = b === 'light' ? 'light' : 'dark'; }
   function getGlobalBackdrop() { return globalBackdrop; }
 
+  var RIGS = {};
+  function getRig(sex) {
+    var k = sex === 'female' ? 'female' : 'male';
+    if (RIGS[k]) return RIGS[k];
+    var av = root.IronPulseGLTF && root.IronPulseGLTF.getAvatar(k);
+    if (!av) return null;
+    RIGS[k] = root.IronPulseKinematics3D.createRig(av);
+    return RIGS[k];
+  }
+
   function create3DScene(canvas, options) {
-    var gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer: false });
-    if (!gl) return null;
-
-    var progHuman = compileProgram(gl, VS_HUMAN, FS_HUMAN);
-    var progProp = compileProgram(gl, VS_PROP, FS_PROP);
-    if (!progHuman || !progProp) return null;
-
-    var hLoc = {
-      aPos: gl.getAttribLocation(progHuman, 'aPos'),
-      aNor: gl.getAttribLocation(progHuman, 'aNor'),
-      aAO: gl.getAttribLocation(progHuman, 'aAO'),
-      aBones: gl.getAttribLocation(progHuman, 'aBones'),
-      aWeights: gl.getAttribLocation(progHuman, 'aWeights'),
-      uViewProj: gl.getUniformLocation(progHuman, 'uViewProj'),
-      uBones: gl.getUniformLocation(progHuman, 'uBones[0]'),
-      uCamPos: gl.getUniformLocation(progHuman, 'uCamPos'),
-      uMuscleTex: gl.getUniformLocation(progHuman, 'uMuscleTex'),
-      uStyleMode: gl.getUniformLocation(progHuman, 'uStyleMode'),
-      uIsFemale: gl.getUniformLocation(progHuman, 'uIsFemale'),
-      uPulse: gl.getUniformLocation(progHuman, 'uPulse'),
-      uPickMode: gl.getUniformLocation(progHuman, 'uPickMode')
-    };
-
-    var pLoc = {
-      aPos: gl.getAttribLocation(progProp, 'aPos'),
-      aNor: gl.getAttribLocation(progProp, 'aNor'),
-      uViewProj: gl.getUniformLocation(progProp, 'uViewProj'),
-      uModel: gl.getUniformLocation(progProp, 'uModel'),
-      uCamPos: gl.getUniformLocation(progProp, 'uCamPos'),
-      uColor: gl.getUniformLocation(progProp, 'uColor'),
-      uMetal: gl.getUniformLocation(progProp, 'uMetal')
-    };
-
-    var boxGeom = createBoxGeom(gl);
-    var cylGeom = createCylGeom(gl, 18);
-
-    var muscleTexData = new Uint8Array(32 * 4);
-    var muscleTex = gl.createTexture();
+    options = options || {};
+    var gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer: !!options.preserve, premultipliedAlpha: true });
+    if (!gl || !root.IronPulseKinematics3D || !root.IronPulseGLTF) return null;
+    var hasDeriv = !!gl.getExtension('OES_standard_derivatives');
+    var progProp = compile(gl, VS_PROP, FS_PROP), progFloor = compile(gl, VS_FLOOR, FS_FLOOR);
+    if (!progProp || !progFloor) return null;
+    var G = { box: boxGeom(gl), cyl: cylGeom(gl, 18), cyl6: cylGeom(gl, 6), cyl10: cylGeom(gl, 10), cyl28: cylGeom(gl, 28), sph: sphGeom(gl), disc: discGeom(gl) };
+    var muscleTexData = new Uint8Array(32 * 4), muscleTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, muscleTex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    ['TEXTURE_MIN_FILTER', 'TEXTURE_MAG_FILTER'].forEach(function (k) { gl.texParameteri(gl.TEXTURE_2D, gl[k], gl.NEAREST); });
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 32, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, muscleTexData);
 
-    var gpuMeshes = {};
-    function getGpuMesh(sex) {
+    var humans = {};
+    function getHuman(sex) {
       var k = sex === 'female' ? 'female' : 'male';
-      if (!gpuMeshes[k]) {
-        var dec = decodeMesh(k);
-        if (dec) gpuMeshes[k] = uploadHumanMesh(gl, dec);
-      }
-      return gpuMeshes[k];
+      if (humans[k]) return humans[k];
+      var rig = getRig(k);
+      if (!rig) return null;
+      var av = rig.av, meta = av.meta || {};
+      var cloth = Object.assign({ shortTop: 0.99, shortBot: 0.73, braTop: 1.3, braBot: 1.18, shoeTop: 0.1 }, meta.clothing || {});
+      cloth.headTop = meta.height || 1.8;
+      var prog = compile(gl, VS_HUMAN, fsHuman(meta.regions || [], hasDeriv, cloth, k === 'female'));
+      if (!prog) return null;
+      function buf(a) { var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, a, gl.STATIC_DRAW); return b; }
+      var ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, av.idx, gl.STATIC_DRAW);
+      var loc = {};
+      ['aPos', 'aNor', 'aAO', 'aBones', 'aWeights'].forEach(function (n) { loc[n] = gl.getAttribLocation(prog, n); });
+      ['uViewProj', 'uCamPos', 'uMuscleTex', 'uStyle', 'uPulse', 'uPick', 'uLight'].forEach(function (n) { loc[n] = gl.getUniformLocation(prog, n); });
+      loc.uBones = gl.getUniformLocation(prog, 'uBones[0]');
+      humans[k] = { rig: rig, prog: prog, loc: loc, pos: buf(av.pos), nor: buf(av.nor), ao: buf(av.ao), bones: buf(av.bones), weights: buf(av.weights), idx: ib, count: av.idx.length, idxType: av.idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT };
+      if (humans[k].idxType === gl.UNSIGNED_INT) gl.getExtension('OES_element_index_uint');
+      return humans[k];
     }
 
-    var mode = (options && options.mode) || 'exercise';
-    // Full-body auto-framed defaults (head to sneakers 100% visible!)
-    var camYaw = (options && options.initialYaw != null) ? options.initialYaw : (mode === 'explorer' ? 0 : 42);
-    var camPitch = (options && options.initialPitch != null) ? options.initialPitch : (mode === 'explorer' ? 2 : 12);
-    var camDist = (options && options.initialDist != null) ? options.initialDist : (mode === 'explorer' ? 3.75 : 3.45);
-    var camTargetY = (options && options.targetY != null) ? options.targetY : 0.90;
-    var userDragged = false;
-    var dragging = false;
-    var pinchDist = 0;
-    var downX = 0, downY = 0, lastX = 0, lastY = 0, movedDist = 0;
+    var pLoc = {}, fLoc = {};
+    ['aPos', 'aNor'].forEach(function (n) { pLoc[n] = gl.getAttribLocation(progProp, n); });
+    ['uViewProj', 'uModel', 'uCamPos', 'uColor', 'uMetal', 'uShin', 'uLight'].forEach(function (n) { pLoc[n] = gl.getUniformLocation(progProp, n); });
+    fLoc.aPos = gl.getAttribLocation(progFloor, 'aPos');
+    ['uViewProj', 'uCenter', 'uRad', 'uLight'].forEach(function (n) { fLoc[n] = gl.getUniformLocation(progFloor, n); });
+    fLoc.uSh = gl.getUniformLocation(progFloor, 'uSh[0]');
+
+    var mode = options.mode || 'exercise';
+    var camYaw = options.initialYaw != null ? options.initialYaw : (mode === 'explorer' ? 0 : 42);
+    var camPitch = options.initialPitch != null ? options.initialPitch : (mode === 'explorer' ? 3 : 12);
+    var zoom = 1.0, userDragged = false, dragging = false, pinchDist = 0;
+    var downX = 0, downY = 0, lastX = 0, lastY = 0, moved = 0;
+    var framing = null, framingKey = '';
 
     function onDown(e) {
-      if (e.touches && e.touches.length === 2) {
-        dragging = false;
-        pinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        return;
-      }
+      if (e.touches && e.touches.length === 2) { dragging = false; pinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); return; }
       var pt = e.touches ? e.touches[0] : e;
-      dragging = true; pinchDist = 0;
-      downX = lastX = pt.clientX; downY = lastY = pt.clientY; movedDist = 0;
+      dragging = true; pinchDist = 0; downX = lastX = pt.clientX; downY = lastY = pt.clientY; moved = 0;
     }
     function onMove(e) {
       if (e.touches && e.touches.length === 2) {
         var nd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        if (pinchDist > 0) {
-          camDist = Math.max(1.8, Math.min(5.2, camDist * (pinchDist / Math.max(nd, 1))));
-          userDragged = true;
-        }
-        pinchDist = nd;
-        if (e.cancelable) e.preventDefault();
-        return;
+        if (pinchDist > 0) { zoom = Math.max(0.45, Math.min(1.6, zoom * (pinchDist / Math.max(nd, 1)))); userDragged = true; }
+        pinchDist = nd; if (e.cancelable) e.preventDefault(); return;
       }
       if (!dragging) return;
-      var pt = e.touches ? e.touches[0] : e;
-      var dx = pt.clientX - lastX, dy = pt.clientY - lastY;
-      lastX = pt.clientX; lastY = pt.clientY;
-      movedDist += Math.hypot(dx, dy);
-      if (movedDist > 4) {
-        userDragged = true;
-        camYaw -= dx * 0.56;
-        camPitch = Math.max(-16, Math.min(48, camPitch + dy * 0.34));
-        if (e.cancelable) e.preventDefault();
-      }
+      var pt = e.touches ? e.touches[0] : e, dx = pt.clientX - lastX, dy = pt.clientY - lastY;
+      lastX = pt.clientX; lastY = pt.clientY; moved += Math.hypot(dx, dy);
+      if (moved > 4) { userDragged = true; camYaw -= dx * 0.5; camPitch = Math.max(-12, Math.min(55, camPitch + dy * 0.3)); if (e.cancelable) e.preventDefault(); }
     }
     function onUp() {
       pinchDist = 0;
       if (!dragging) return;
       dragging = false;
-      if (movedDist < 8 && options && options.onPickMuscle) {
+      if (moved < 8 && options.onPickMuscle) {
         var rect = canvas.getBoundingClientRect();
-        var sx = (downX - rect.left) / rect.width;
-        var sy = 1.0 - (downY - rect.top) / rect.height;
-        var picked = pickMuscleAt(sx, sy);
+        var picked = pickAt((downX - rect.left) / rect.width, 1 - (downY - rect.top) / rect.height);
         if (picked) options.onPickMuscle(picked);
       }
     }
-    function onWheel(e) {
-      camDist = Math.max(1.8, Math.min(5.2, camDist + (e.deltaY > 0 ? 0.2 : -0.2)));
-      userDragged = true;
-      e.preventDefault();
-    }
-
-    canvas.addEventListener('mousedown', onDown);
-    root.addEventListener('mousemove', onMove);
-    root.addEventListener('mouseup', onUp);
+    function onWheel(e) { zoom = Math.max(0.45, Math.min(1.6, zoom * (e.deltaY > 0 ? 1.08 : 0.92))); userDragged = true; e.preventDefault(); }
+    canvas.addEventListener('mousedown', onDown); root.addEventListener('mousemove', onMove); root.addEventListener('mouseup', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    canvas.addEventListener('touchstart', onDown, { passive: true });
-    canvas.addEventListener('touchmove', onMove, { passive: false });
-    canvas.addEventListener('touchend', onUp, { passive: true });
+    canvas.addEventListener('touchstart', onDown, { passive: true }); canvas.addEventListener('touchmove', onMove, { passive: false }); canvas.addEventListener('touchend', onUp, { passive: true });
 
-    var lastExerciseId = '';
-    var lastSkinResult = null;
-    var lastViewProj = new Float32Array(16);
-    var lastCamPos = [0, 1.0, 3.7];
-    var latestCfg = null;
+    var viewProj = new Float32Array(16), camPos = [0, 1, 4], latestCfg = null, lastEval = null;
 
     function updateMuscleTexture(cfg, pulse) {
       muscleTexData.fill(0);
+      function set(id, r, g, b, a) { if (!id) return; muscleTexData[id * 4] = r; muscleTexData[id * 4 + 1] = g; muscleTexData[id * 4 + 2] = b; muscleTexData[id * 4 + 3] = a; }
       if (mode === 'explorer') {
-        var fat = cfg.fatigueMap || {};
-        var sel = cfg.selectedMuscle || 'all';
-        Object.keys(MUSCLE_INDEX).forEach(function (mKey) {
-          var id = MUSCLE_INDEX[mKey];
-          var val = Number(fat[mKey]) || 0;
-          var r = 0, g = 0, b = 0, a = 0;
-          if (sel === mKey) { r = 244; g = 58; b = 38; a = 250; }
-          else if (val >= 65) { r = 235; g = 42; b = 38; a = 235; }
-          else if (val >= 30) { r = 240; g = 140; b = 22; a = 205; }
-          else if (val > 0) { r = 16; g = 185; b = 129; a = 175; }
-          muscleTexData[id*4]=r; muscleTexData[id*4+1]=g; muscleTexData[id*4+2]=b; muscleTexData[id*4+3]=a;
+        var fat = cfg.fatigueMap || {}, sel = cfg.selectedMuscle || 'all';
+        Object.keys(MUSCLE_INDEX).forEach(function (m) {
+          var v = Number(fat[m]) || 0, id = MUSCLE_INDEX[m];
+          if (sel === m) set(id, 244, 58, 38, 250);
+          else if (v >= 65) set(id, 235, 42, 38, 230);
+          else if (v >= 30) set(id, 240, 140, 22, 205);
+          else if (v > 0) set(id, 16, 185, 129, 170);
         });
       } else if (cfg.exercise) {
         var ex = cfg.exercise;
-        (ex.stabilizers || []).forEach(function (mKey) {
-          var id = MUSCLE_INDEX[mKey]; if (!id) return;
-          muscleTexData[id*4]=82; muscleTexData[id*4+1]=168; muscleTexData[id*4+2]=245; muscleTexData[id*4+3]=95;
-        });
-        (ex.secondary || []).forEach(function (mKey) {
-          var id = MUSCLE_INDEX[mKey]; if (!id) return;
-          muscleTexData[id*4]=79; muscleTexData[id*4+1]=107; muscleTexData[id*4+2]=255; muscleTexData[id*4+3]=210;
-        });
-        (ex.primary || []).forEach(function (mKey) {
-          var id = MUSCLE_INDEX[mKey]; if (!id) return;
-          var boost = Math.round(220 + pulse * 35);
-          muscleTexData[id*4]=244; muscleTexData[id*4+1]=58; muscleTexData[id*4+2]=38; muscleTexData[id*4+3]=boost;
-        });
+        (ex.stabilizers || []).forEach(function (m) { set(MUSCLE_INDEX[m], 95, 183, 196, 120); });
+        (ex.secondary || []).forEach(function (m) { set(MUSCLE_INDEX[m], 79, 107, 255, 215); });
+        (ex.primary || []).forEach(function (m) { set(MUSCLE_INDEX[m], 244, 58, 38, Math.round(225 + pulse * 30)); });
       }
       gl.bindTexture(gl.TEXTURE_2D, muscleTex);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 32, 1, gl.RGBA, gl.UNSIGNED_BYTE, muscleTexData);
     }
 
-    function drawProp(geom, modelMat, color, metal) {
+    function drawProp(g, M, mat) {
+      var m = MATERIALS[mat] || MATERIALS.frame;
+      gl.uniformMatrix4fv(pLoc.uModel, false, M);
+      gl.uniform3fv(pLoc.uColor, m[0]); gl.uniform1f(pLoc.uMetal, m[1]); gl.uniform1f(pLoc.uShin, m[2]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.p); gl.enableVertexAttribArray(pLoc.aPos); gl.vertexAttribPointer(pLoc.aPos, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(pLoc.aNor); gl.vertexAttribPointer(pLoc.aNor, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+    }
+    function drawProps(props) {
       gl.useProgram(progProp);
-      gl.uniformMatrix4fv(pLoc.uViewProj, false, lastViewProj);
-      gl.uniformMatrix4fv(pLoc.uModel, false, modelMat);
-      gl.uniform3fv(pLoc.uCamPos, lastCamPos);
-      gl.uniform3fv(pLoc.uColor, color);
-      gl.uniform1f(pLoc.uMetal, metal);
-      gl.bindBuffer(gl.ARRAY_BUFFER, geom.bp); gl.enableVertexAttribArray(pLoc.aPos); gl.vertexAttribPointer(pLoc.aPos, 3, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, geom.bn); gl.enableVertexAttribArray(pLoc.aNor); gl.vertexAttribPointer(pLoc.aNor, 3, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geom.bi);
-      gl.drawElements(gl.TRIANGLES, geom.count, gl.UNSIGNED_SHORT, 0);
-    }
-
-    function draw3DEquipment(cfg, skinRes) {
-      var isLight = globalBackdrop === 'light';
-      drawProp(cylGeom, m4Box(0, -0.014, 0, 0.92, 0.028, 0.92), isLight ? [0.68, 0.72, 0.78] : [0.13, 0.15, 0.20], 0.2);
-
-      if (mode === 'explorer' || !cfg.exercise) return;
-      var ex = cfg.exercise, prop = ex.equipProp, prof = skinRes.profile, wj = skinRes.worldJoints;
-      var lH = [wj[7][12], wj[7][13], wj[7][14]];
-      var rH = [wj[10][12], wj[10][13], wj[10][14]];
-
-      if (prof.bench === 'flat') {
-        drawProp(boxGeom, m4Box(0, 0.39, -0.18, 0.34, 0.07, 1.18), [0.14, 0.16, 0.21], 0.18);
-        drawProp(boxGeom, m4Box(0, 0.20, -0.62, 0.07, 0.39, 0.07), [0.38, 0.42, 0.48], 0.78);
-        drawProp(boxGeom, m4Box(0, 0.20,  0.26, 0.07, 0.39, 0.07), [0.38, 0.42, 0.48], 0.78);
-        drawProp(boxGeom, m4Box(0, 0.02, -0.62, 0.44, 0.04, 0.09), [0.22, 0.24, 0.29], 0.6);
-        drawProp(boxGeom, m4Box(0, 0.02,  0.26, 0.44, 0.04, 0.09), [0.22, 0.24, 0.29], 0.6);
-      } else if (prof.bench === 'incline') {
-        drawProp(boxGeom, m4Box(0, 0.28, 0.10, 0.34, 0.07, 0.42), [0.14, 0.16, 0.21], 0.18);
-        drawProp(boxGeom, m4Box(0, 0.18, 0.12, 0.07, 0.34, 0.07), [0.38, 0.42, 0.48], 0.78);
-        drawProp(cylGeom, m4Segment(0, 0.30, -0.05, 0, 0.90, -0.58, 0.14), [0.14, 0.16, 0.21], 0.18);
-        drawProp(boxGeom, m4Box(0, 0.38, -0.50, 0.07, 0.78, 0.07), [0.38, 0.42, 0.48], 0.78);
-      } else if (prof.bench === 'seat') {
-        drawProp(boxGeom, m4Box(0, 0.48, 0.02, 0.36, 0.07, 0.42), [0.14, 0.16, 0.21], 0.18);
-        drawProp(boxGeom, m4Box(0, 0.24, 0.02, 0.08, 0.48, 0.08), [0.38, 0.42, 0.48], 0.78);
-      }
-
-      if (prof.awTable) {
-        drawProp(boxGeom, m4Box(0.10, 1.02, 0.34, 0.82, 0.06, 0.56), [0.15, 0.17, 0.22], 0.2);
-        drawProp(boxGeom, m4Box(0.22, 1.07, 0.24, 0.22, 0.04, 0.22), [0.76, 0.16, 0.16], 0.15);
-        drawProp(boxGeom, m4Box(-0.26, 0.51, 0.12, 0.05, 1.02, 0.05), [0.32, 0.36, 0.42], 0.75);
-        drawProp(boxGeom, m4Box( 0.46, 0.51, 0.12, 0.05, 1.02, 0.05), [0.32, 0.36, 0.42], 0.75);
-        drawProp(boxGeom, m4Box(-0.26, 0.51, 0.56, 0.05, 1.02, 0.05), [0.32, 0.36, 0.42], 0.75);
-        drawProp(boxGeom, m4Box( 0.46, 0.51, 0.56, 0.05, 1.02, 0.05), [0.32, 0.36, 0.42], 0.75);
-      }
-
-      if (prop === 'barbell') {
-        var bx = rH[0] - lH[0], by = rH[1] - lH[1], bz = rH[2] - lH[2];
-        var bl = Math.hypot(bx, by, bz) || 0.4;
-        var ux = bx / bl, uy = by / bl, uz = bz / bl;
-        var cx = (lH[0] + rH[0]) * 0.5, cy = (lH[1] + rH[1]) * 0.5, cz = (lH[2] + rH[2]) * 0.5;
-        if (ex.kinematics === 'squat') { cy = wj[2][13] + 0.16; cz = wj[2][14] - 0.08; }
-        var halfLen = 0.88;
-        drawProp(cylGeom, m4Segment(cx - ux*halfLen, cy - uy*halfLen, cz - uz*halfLen, cx + ux*halfLen, cy + uy*halfLen, cz + uz*halfLen, 0.018), [0.84, 0.88, 0.94], 0.94);
-        [-1, 1].forEach(function (s) {
-          [[0.62, 0.67, 0.19], [0.68, 0.72, 0.15], [0.73, 0.76, 0.11]].forEach(function (pl) {
-            drawProp(cylGeom, m4Segment(cx+ux*s*pl[0], cy+uy*s*pl[0], cz+uz*s*pl[0], cx+ux*s*pl[1], cy+uy*s*pl[1], cz+uz*s*pl[1], pl[2]), [0.13, 0.15, 0.19], 0.55);
-          });
-        });
-      } else if (prop === 'dumbbells') {
-        [lH, rH].forEach(function (h) {
-          drawProp(cylGeom, m4Segment(h[0]-0.11, h[1], h[2], h[0]+0.11, h[1], h[2], 0.016), [0.84, 0.88, 0.94], 0.92);
-          drawProp(cylGeom, m4Segment(h[0]-0.13, h[1], h[2], h[0]-0.07, h[1], h[2], 0.068), [0.14, 0.16, 0.20], 0.52);
-          drawProp(cylGeom, m4Segment(h[0]+0.07, h[1], h[2], h[0]+0.13, h[1], h[2], 0.068), [0.14, 0.16, 0.20], 0.52);
-        });
-      } else if (prop === 'pullup_bar') {
-        var barY = ex.kinematics === 'inverted_row' ? 0.88 : 2.02;
-        drawProp(cylGeom, m4Segment(-0.72, barY, 0, 0.72, barY, 0, 0.022), [0.80, 0.84, 0.90], 0.9);
-        drawProp(cylGeom, m4Segment(-0.72, 0, 0, -0.72, barY, 0, 0.028), [0.22, 0.25, 0.30], 0.6);
-        drawProp(cylGeom, m4Segment( 0.72, 0, 0,  0.72, barY, 0, 0.028), [0.22, 0.25, 0.30], 0.6);
-      } else if (prop === 'dip_bars') {
-        [-0.30, 0.30].forEach(function (dx) {
-          drawProp(cylGeom, m4Segment(dx, 1.05, -0.35, dx, 1.05, 0.35, 0.022), [0.78, 0.82, 0.88], 0.88);
-          drawProp(cylGeom, m4Segment(dx, 0, -0.32, dx, 1.05, -0.32, 0.025), [0.22, 0.25, 0.30], 0.6);
-          drawProp(cylGeom, m4Segment(dx, 0,  0.32, dx, 1.05,  0.32, 0.025), [0.22, 0.25, 0.30], 0.6);
-        });
-      } else if (prop === 'cable' || prop === 'aw_cable') {
-        var towZ = ex.kinematics === 'cable_fly' ? -0.35 : 0.72;
-        drawProp(boxGeom, m4Box(0, 1.02, towZ, 0.26, 2.04, 0.24), [0.16, 0.19, 0.24], 0.5);
-        drawProp(cylGeom, m4Segment(0, 1.35, towZ, rH[0], rH[1], rH[2], 0.008), [0.85, 0.88, 0.92], 0.8);
-        if (ex.kinematics === 'cable_fly' || ex.kinematics === 'face_pull' || ex.kinematics === 'pulldown') {
-          drawProp(cylGeom, m4Segment(0, 1.35, towZ, lH[0], lH[1], lH[2], 0.008), [0.85, 0.88, 0.92], 0.8);
-        }
-      } else if (prop === 'aw_belt') {
-        drawProp(cylGeom, m4Segment(rH[0], rH[1], rH[2], rH[0], Math.max(0.18, rH[1] - 0.55), rH[2], 0.015), [0.92, 0.20, 0.18], 0.25);
-        drawProp(cylGeom, m4Segment(rH[0], Math.max(0.08, rH[1] - 0.62), rH[2], rH[0], Math.max(0.18, rH[1] - 0.52), rH[2], 0.12), [0.14, 0.16, 0.21], 0.6);
-      } else if (prop === 'kettlebell' || prop === 'medball') {
-        var mx = (lH[0]+rH[0])*0.5, my = (lH[1]+rH[1])*0.5 - 0.05, mz = (lH[2]+rH[2])*0.5;
-        drawProp(cylGeom, m4Segment(mx, my-0.10, mz, mx, my+0.10, mz, 0.11), prop === 'medball' ? [0.74, 0.18, 0.18] : [0.15, 0.17, 0.22], 0.45);
-      } else if (prop === 'box') {
-        drawProp(boxGeom, m4Box(0, 0.22, prof.box === 'back' ? -0.78 : 0.45, 0.55, 0.44, 0.50), [0.17, 0.19, 0.25], 0.25);
+      gl.uniformMatrix4fv(pLoc.uViewProj, false, viewProj); gl.uniform3fv(pLoc.uCamPos, camPos); gl.uniform1f(pLoc.uLight, globalBackdrop === 'light' ? 1 : 0);
+      for (var i = 0; i < props.length; i++) {
+        var p = props[i];
+        if (p.t === 'box') drawProp(G.box, m4Box(p.c, p.s, p.R), p.m);
+        else if (p.t === 'cyl') drawProp(p.seg === 6 ? G.cyl6 : p.seg && p.seg <= 10 ? G.cyl10 : p.seg >= 24 ? G.cyl28 : G.cyl, m4Segment(p.a, p.b, p.r), p.m);
+        else if (p.t === 'sph') drawProp(G.sph, m4Box(p.c, [p.r, p.r, p.r]), p.m);
       }
     }
-
-    function drawHumanPass(gpuMesh, skinRes, sex, pulse, pickMode) {
-      gl.useProgram(progHuman);
-      gl.uniformMatrix4fv(hLoc.uViewProj, false, lastViewProj);
-      gl.uniformMatrix4fv(hLoc.uBones, false, skinRes.bones);
-      gl.uniform3fv(hLoc.uCamPos, lastCamPos);
-      gl.uniform1f(hLoc.uStyleMode, globalStyle === 'athlete' ? 1.0 : 0.0);
-      gl.uniform1f(hLoc.uIsFemale, sex === 'female' ? 1.0 : 0.0);
-      gl.uniform1f(hLoc.uPulse, pulse);
-      gl.uniform1f(hLoc.uPickMode, pickMode ? 1.0 : 0.0);
-
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, muscleTex);
-      gl.uniform1i(hLoc.uMuscleTex, 0);
-
-      function bindAttr(loc, buf, size) {
-        if (loc < 0) return;
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.enableVertexAttribArray(loc);
-        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-      }
-      bindAttr(hLoc.aPos, gpuMesh.pos, 3);
-      bindAttr(hLoc.aNor, gpuMesh.nor, 3);
-      bindAttr(hLoc.aAO, gpuMesh.ao, 1);
-      bindAttr(hLoc.aBones, gpuMesh.bones, 4);
-      bindAttr(hLoc.aWeights, gpuMesh.weights, 4);
-
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpuMesh.idx);
-      gl.drawElements(gl.TRIANGLES, gpuMesh.count, gl.UNSIGNED_SHORT, 0);
+    function drawFloor(center, rad, ev) {
+      gl.useProgram(progFloor);
+      gl.uniformMatrix4fv(fLoc.uViewProj, false, viewProj); gl.uniform3fv(fLoc.uCenter, center); gl.uniform1f(fLoc.uRad, rad);
+      gl.uniform1f(fLoc.uLight, globalBackdrop === 'light' ? 1 : 0);
+      var sh = new Float32Array(48), k = 0, P = ev.pose.pts;
+      function add(pt, r, s) { if (!pt || k >= 12) return; var h = Math.max(pt[1], 0); sh[k * 4] = pt[0]; sh[k * 4 + 1] = pt[2]; sh[k * 4 + 2] = r + h * 0.35; sh[k * 4 + 3] = s * Math.exp(-h * 1.4); k++; }
+      add(P.ball_l, 0.11, 0.55); add(P.ball_r, 0.11, 0.55); add(P.A_l, 0.1, 0.5); add(P.A_r, 0.1, 0.5);
+      add(P.hip_l ? [(P.hip_l[0] + P.hip_r[0]) / 2, P.hip_l[1], (P.hip_l[2] + P.hip_r[2]) / 2] : null, 0.22, 0.42);
+      add(P.S_mid, 0.24, 0.32); add(P.W_l, 0.07, 0.35); add(P.W_r, 0.07, 0.35); add(P.K_l, 0.09, 0.35); add(P.K_r, 0.09, 0.35);
+      gl.uniform4fv(fLoc.uSh, sh);
+      gl.bindBuffer(gl.ARRAY_BUFFER, G.disc.p); gl.enableVertexAttribArray(fLoc.aPos); gl.vertexAttribPointer(fLoc.aPos, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, G.disc.i);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      gl.drawElements(gl.TRIANGLES, G.disc.count, gl.UNSIGNED_SHORT, 0);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+    }
+    function drawHuman(h, ev, pulse, pick) {
+      var L = h.loc;
+      gl.useProgram(h.prog);
+      gl.uniformMatrix4fv(L.uViewProj, false, viewProj); gl.uniformMatrix4fv(L.uBones, false, ev.skin);
+      gl.uniform3fv(L.uCamPos, camPos); gl.uniform1f(L.uStyle, globalStyle === 'athlete' ? 1 : 0);
+      gl.uniform1f(L.uPulse, pulse); gl.uniform1f(L.uPick, pick ? 1 : 0); gl.uniform1f(L.uLight, globalBackdrop === 'light' ? 1 : 0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, muscleTex); gl.uniform1i(L.uMuscleTex, 0);
+      function at(loc, b, n) { if (loc < 0) return; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 0, 0); }
+      at(L.aPos, h.pos, 3); at(L.aNor, h.nor, 3); at(L.aAO, h.ao, 1); at(L.aBones, h.bones, 4); at(L.aWeights, h.weights, 4);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, h.idx);
+      gl.drawElements(gl.TRIANGLES, h.count, h.idxType, 0);
+      [L.aAO, L.aBones, L.aWeights].forEach(function (l) { if (l >= 0) gl.disableVertexAttribArray(l); });
     }
 
-    function pickMuscleAt(nx, ny) {
-      if (!latestCfg || !lastSkinResult) return null;
-      var gpuMesh = getGpuMesh(latestCfg.sex);
-      if (!gpuMesh) return null;
-      var px = Math.max(0, Math.min(canvas.width - 1, Math.floor(nx * canvas.width)));
-      var py = Math.max(0, Math.min(canvas.height - 1, Math.floor(ny * canvas.height)));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.enable(gl.DEPTH_TEST);
-      drawHumanPass(gpuMesh, lastSkinResult, latestCfg.sex, 0, true);
-      var out = new Uint8Array(4);
-      gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    // auto-framing: bounds over a whole rep (head-to-toe + equipment), so the camera never crops
+    function computeFraming(h, cfg) {
+      var K = root.IronPulseKinematics3D, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+      function addP(p, pad) { if (!p) return; for (var i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], p[i] - (pad || 0)); mx[i] = Math.max(mx[i], p[i] + (pad || 0)); } }
+      for (var s = 0; s < 10; s++) {
+        var ev = K.evaluate(h.rig, cfg.exercise, s / 10, mode === 'explorer');
+        var P = ev.pose.pts;
+        ['S_l', 'S_r', 'E_l', 'E_r', 'W_l', 'W_r', 'G_l', 'G_r', 'hip_l', 'hip_r', 'K_l', 'K_r', 'A_l', 'A_r', 'ball_l', 'ball_r'].forEach(function (k) { addP(P[k], 0.09); });
+        addP(P.headTop, 0.05);
+        ev.props.forEach(function (pr) { if (pr.m === 'mat') return; if (pr.t === 'box') { var e = Math.max(pr.s[0], pr.s[1], pr.s[2]) * 0.5; addP(pr.c, Math.min(e, 0.35)); } else if (pr.t === 'cyl') { addP(pr.a, pr.r * 0.5); addP(pr.b, pr.r * 0.5); } else addP(pr.c, pr.r); });
+      }
+      mn[1] = Math.min(mn[1], 0);
+      var c = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
+      return { c: c, mn: mn, mx: mx, floorR: Math.max(0.95, Math.hypot(mx[0] - mn[0], mx[2] - mn[2]) * 0.52 + 0.12) };
+    }
+
+    function pickAt(nx, ny) {
+      if (!latestCfg || !lastEval) return null;
+      var h = getHuman(latestCfg.sex); if (!h) return null;
+      var px = Math.max(0, Math.min(canvas.width - 1, Math.floor(nx * canvas.width))), py = Math.max(0, Math.min(canvas.height - 1, Math.floor(ny * canvas.height)));
+      gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+      drawHuman(h, lastEval, 0, true);
+      var out = new Uint8Array(4); gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
       return INDEX_TO_MUSCLE[out[0]] || null;
     }
 
     function renderFrame(cfg, u) {
       latestCfg = cfg;
-      var gpuMesh = getGpuMesh(cfg.sex);
-      if (!gpuMesh) return null;
-
-      var dpr = Math.min(1.75, root.devicePixelRatio || 1);
-      var rect = canvas.getBoundingClientRect();
-      var w = Math.max(120, Math.round((rect.width || 320) * dpr));
-      var h = Math.max(120, Math.round((rect.height || 260) * dpr));
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w; canvas.height = h;
+      var h = getHuman(cfg.sex); if (!h) return null;
+      var dpr = Math.min(1.75, root.devicePixelRatio || 1), rect = canvas.getBoundingClientRect();
+      var w = Math.max(120, Math.round((rect.width || 320) * dpr)), hh = Math.max(120, Math.round((rect.height || 260) * dpr));
+      if (canvas.width !== w || canvas.height !== hh) { canvas.width = w; canvas.height = hh; }
+      var K = root.IronPulseKinematics3D, isIdle = mode === 'explorer';
+      var key = (cfg.sex || 'male') + ':' + (isIdle ? 'idle' : (cfg.exercise ? cfg.exercise.id : ''));
+      if (key !== framingKey) {
+        framingKey = key; framing = computeFraming(h, cfg);
+        var clip = isIdle ? K.CLIPS.idle : K.clipFor(cfg.exercise);
+        if (!userDragged && clip && clip.cam && mode !== 'explorer') { camYaw = clip.cam[0]; camPitch = clip.cam[1]; }
       }
-
-      var isIdle = (mode === 'explorer');
-      var exId = cfg.exercise ? cfg.exercise.id : '';
-      var prof = !isIdle ? root.IronPulseKinematics3D.PROFILES[cfg.exercise ? cfg.exercise.kinematics : 'squat'] : null;
-
-      if (!isIdle && exId !== lastExerciseId) {
-        lastExerciseId = exId;
-        if (prof && prof.cam && !userDragged) {
-          camYaw = prof.cam[0];
-          camPitch = Math.min(18, prof.cam[1]);
-          // Ensure full body + barbell plates fit comfortably inside 16:12 or 16:10 viewports!
-          camDist = Math.max(3.25, prof.cam[2] * 1.24);
-          camTargetY = prof.cam[3];
-        }
+      var ev = K.evaluate(h.rig, cfg.exercise, u, isIdle);
+      lastEval = ev;
+      var aspect = w / hh, fov = 30 * Math.PI / 180;
+      var yr = camYaw * Math.PI / 180, pr = camPitch * Math.PI / 180, c = framing.c;
+      // tight fit of the rep's bounding box for the current view direction (head-to-toe, never cropped)
+      var fw = [Math.sin(yr) * Math.cos(pr), Math.sin(pr), Math.cos(yr) * Math.cos(pr)], rt = [Math.cos(yr), 0, -Math.sin(yr)];
+      var upv = [fw[1] * rt[2] - fw[2] * rt[1], fw[2] * rt[0] - fw[0] * rt[2], fw[0] * rt[1] - fw[1] * rt[0]];
+      var tv = Math.tan(fov / 2), th = tv * aspect, need = 0.5;
+      for (var ci = 0; ci < 8; ci++) {
+        var q = [(ci & 1 ? framing.mx[0] : framing.mn[0]) - c[0], (ci & 2 ? framing.mx[1] : framing.mn[1]) - c[1], (ci & 4 ? framing.mx[2] : framing.mn[2]) - c[2]];
+        var qx = q[0] * rt[0] + q[2] * rt[2], qy = q[0] * upv[0] + q[1] * upv[1] + q[2] * upv[2], qz = q[0] * fw[0] + q[1] * fw[1] + q[2] * fw[2];
+        need = Math.max(need, qz + Math.abs(qx) / th, qz + (qy > 0 ? qy * 1.2 : -qy * 1.05) / tv);
       }
-
-      var skinRes = root.IronPulseKinematics3D.computeSkinMatrices(
-        gpuMesh.joints,
-        cfg.exercise ? cfg.exercise.kinematics : 'squat',
-        u,
-        isIdle
-      );
-      lastSkinResult = skinRes;
-
-      // Adaptive full-body framing: if viewport is wide (e.g. 16:10 active modal), zoom out slightly so head & feet never clip
-      var aspect = w / h;
-      var effectiveDist = camDist;
-      if (!userDragged && aspect > 1.15) {
-        effectiveDist = camDist * (1.0 + (aspect - 1.15) * 0.25);
-      }
-
-      var yr = camYaw * Math.PI / 180;
-      var pr = camPitch * Math.PI / 180;
-      var cx = Math.sin(yr) * Math.cos(pr) * effectiveDist;
-      var cy = camTargetY + Math.sin(pr) * effectiveDist;
-      var cz = Math.cos(yr) * Math.cos(pr) * effectiveDist;
-      lastCamPos = [cx, cy, cz];
-
-      var proj = new Float32Array(16);
-      var view = new Float32Array(16);
-      m4Perspective(proj, 34 * Math.PI / 180, aspect, 0.1, 22.0);
-      m4LookAt(view, cx, cy, cz, 0, camTargetY, 0);
-      m4Mul(lastViewProj, proj, view);
-
-      updateMuscleTexture(cfg, skinRes.p);
-
-      if (canvas.parentElement) {
-        canvas.parentElement.classList.toggle('studio-light', globalBackdrop === 'light');
-      }
-
-      gl.viewport(0, 0, w, h);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
+      var dist = need * 1.06 * zoom;
+      camPos = [c[0] + Math.sin(yr) * Math.cos(pr) * dist, c[1] + Math.sin(pr) * dist, c[2] + Math.cos(yr) * Math.cos(pr) * dist];
+      var proj = new Float32Array(16), view = new Float32Array(16);
+      m4Perspective(proj, fov, aspect, 0.05, 40); m4LookAt(view, camPos, c); m4Mul(viewProj, proj, view);
+      updateMuscleTexture(cfg, ev.p);
+      if (canvas.parentElement) canvas.parentElement.classList.toggle('studio-light', globalBackdrop === 'light');
+      gl.viewport(0, 0, w, hh); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
       gl.disable(gl.CULL_FACE);
-
-      draw3DEquipment(cfg, skinRes);
-      drawHumanPass(gpuMesh, skinRes, cfg.sex, skinRes.p, false);
-      return skinRes;
+      drawProps(ev.props);
+      drawHuman(h, ev, ev.p, false);
+      drawFloor([c[0], 0, c[2]], framing.floorR, ev);
+      return { phase: ev.phase, p: ev.p, pose: ev.pose, props: ev.props };
     }
 
     var rafId = null, lastTs = 0, u = 0, paused = false, speed = 1.0;
     function tick(ts) {
       if (!lastTs) lastTs = ts;
-      var dt = Math.min(0.05, (ts - lastTs) / 1000);
-      lastTs = ts;
-      if (!paused) u = (u + dt * (mode === 'explorer' ? 0.16 : 0.34) * speed) % 1;
-      var cfg = options.getConfig();
-      var res = renderFrame(cfg, u);
+      var dt = Math.min(0.05, (ts - lastTs) / 1000); lastTs = ts;
+      if (!paused) u = (u + dt * (mode === 'explorer' ? 0.16 : 0.3) * speed) % 1;
+      var res = renderFrame(options.getConfig(), u);
       if (options.onFrame && res) options.onFrame(res, u);
       rafId = root.requestAnimationFrame(tick);
     }
-    rafId = root.requestAnimationFrame(tick);
+    if (!options.manual) rafId = root.requestAnimationFrame(tick);
 
     return {
       stop: function () {
-        if (rafId) root.cancelAnimationFrame(rafId);
-        rafId = null;
-        canvas.removeEventListener('mousedown', onDown);
-        root.removeEventListener('mousemove', onMove);
-        root.removeEventListener('mouseup', onUp);
-        canvas.removeEventListener('wheel', onWheel);
-        canvas.removeEventListener('touchstart', onDown);
-        canvas.removeEventListener('touchmove', onMove);
-        canvas.removeEventListener('touchend', onUp);
-        try { var ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (ignored) {}
+        if (rafId) root.cancelAnimationFrame(rafId); rafId = null;
+        canvas.removeEventListener('mousedown', onDown); root.removeEventListener('mousemove', onMove); root.removeEventListener('mouseup', onUp);
+        canvas.removeEventListener('wheel', onWheel); canvas.removeEventListener('touchstart', onDown); canvas.removeEventListener('touchmove', onMove); canvas.removeEventListener('touchend', onUp);
+        try { var ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (ignored) { /* noop */ }
       },
       setPaused: function (v) { paused = !!v; },
       isPaused: function () { return paused; },
       setSpeed: function (s) { speed = s; },
       setProgress: function (val) { u = Math.max(0, Math.min(0.999, val)); },
-      setCameraAngle: function (yawDeg, pitchDeg) {
+      renderAt: function (val) { u = val; return renderFrame(options.getConfig(), u); },
+      setZoom: function (z) { zoom = Math.max(0.3, Math.min(1.6, z)); userDragged = true; },
+      setCameraAngle: function (yawDeg, pitchDeg) { userDragged = true; camYaw = yawDeg; if (pitchDeg != null) camPitch = pitchDeg; },
+      setPresetView: function (key) {
         userDragged = true;
-        camYaw = yawDeg;
-        if (pitchDeg != null) camPitch = pitchDeg;
-      },
-      setPresetView: function (presetKey) {
-        userDragged = true;
-        var prof = (latestCfg && latestCfg.exercise)
-          ? root.IronPulseKinematics3D.PROFILES[latestCfg.exercise.kinematics]
-          : null;
-        if (prof && prof.camPresets && prof.camPresets[presetKey]) {
-          camYaw = prof.camPresets[presetKey][0];
-          camPitch = prof.camPresets[presetKey][1];
-        } else if (presetKey === 'front') {
-          camYaw = 0; camPitch = 8;
-        } else if (presetKey === 'threeq') {
-          camYaw = 42; camPitch = 12;
-        } else if (presetKey === 'side') {
-          camYaw = 90; camPitch = 10;
-        }
+        var K = root.IronPulseKinematics3D, clip = latestCfg && latestCfg.exercise ? K.clipFor(latestCfg.exercise) : null;
+        var pr = clip && clip.presets && clip.presets[key];
+        if (pr) { camYaw = pr[0]; camPitch = pr[1]; }
+        else if (key === 'front') { camYaw = 0; camPitch = 8; } else if (key === 'threeq') { camYaw = 40; camPitch = 12; } else if (key === 'side') { camYaw = 90; camPitch = 6; }
       }
     };
   }
 
-  root.IronPulse3D = {
-    create3DScene: create3DScene,
-    setGlobalStyle: setGlobalStyle,
-    getGlobalStyle: getGlobalStyle,
-    setGlobalBackdrop: setGlobalBackdrop,
-    getGlobalBackdrop: getGlobalBackdrop,
-    MUSCLE_INDEX: MUSCLE_INDEX
-  };
+  root.IronPulse3D = { create3DScene: create3DScene, setGlobalStyle: setGlobalStyle, getGlobalStyle: getGlobalStyle, setGlobalBackdrop: setGlobalBackdrop, getGlobalBackdrop: getGlobalBackdrop, MUSCLE_INDEX: MUSCLE_INDEX };
 })(typeof window !== 'undefined' ? window : globalThis);
