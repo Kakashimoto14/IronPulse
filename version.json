@@ -1,7 +1,7 @@
 {
-  "version": "2.0.0",
-  "versionCode": 20000,
-  "tag": "v2.0.0",
+  "version": "2.1.0",
+  "versionCode": 20100,
+  "tag": "v2.1.0",
   "repo": "Kakashimoto14/IronPulse",
-  "releaseNotes": "v2.0.0 REAL 3D WEBGL ANATOMY ENGINE: Replaced 2D flat figures with watertight 18,000-triangle sculpted 3D Male & Female faceless human meshes rendered in real-time 60 FPS WebGL with 17-bone 3D skeletal animation, 360-degree touch orbit, 3D GPU tap-a-muscle picking, Sculpt/Skin studio finish toggle, glowing striated crimson muscle overlays, and real 3D barbells/benches/cables/arm-wrestling table."
+  "releaseNotes": "v2.1.0 Heroic 3D Anatomy & Lyfta-Grade Exercise UX: Re-sculpted Muscular Male & Hourglass Athletic Female 3D meshes with complete hands/forearms (zero clipping) and silk-smooth analytical SDF normals, per-pixel razor-sharp sportswear hems & anatomical muscle contours (zero jagged edges), Vermilion Primary + Indigo-Blue Secondary muscle contrast, eye-level heroic framing, Light/Dark Studio backdrop toggle, Exercise Favorites, and About/History/Progress tabs inside every exercise."
 }

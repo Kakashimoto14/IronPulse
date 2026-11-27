@@ -30,6 +30,7 @@
     activeWorkout: null,
     hydration: { date: '', waterCups: 0, creatineTaken: false },
     prs: {},
+    favorites: [],
     updateRepo: 'Kakashimoto14/IronPulse',
     tempoBeepOn: false
   };

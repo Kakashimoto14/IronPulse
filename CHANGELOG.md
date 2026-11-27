@@ -1,5 +1,10 @@
 # IronPulse Changelog
 
+## v2.1.0
+- **Heroic Muscular Male & Hourglass Curvy Female 3D Sculpt Overhaul:** Re-engineered both watertight 3D meshes (`21,940` tris Male / `18,008` tris Female) with wider bounding volumes (100% complete hands & forearms, zero clipping), silk-smooth analytical SDF gradient normals, square-cut male pectorals, deep spinal furrow, cannonball deltoids, sweeping quads/calves, and feminine hourglass waist, sculpted glutes, athletic bust, and flowing ponytail.
+- **Per-Pixel 4K Sportswear & Anatomical Muscle Shader (`webgl-3d.js`):** Replaced vertex-grid clothing and box-cut muscle stripes with smooth per-pixel `smoothstep` hems (zero jagged shorts edges!) and curved anatomical muscle silhouettes (fan-shaped pectorals, teardrop delts, sculpted 6-pack abs) rendered with Lyfta-grade Vermilion-Red Primary + Electric Indigo-Blue Secondary contrast.
+- **Lyfta-Grade Exercise UX (`app.js`, `app.css`):** Added segmented **About | History | Progress** tabs inside every exercise modal, **Favorites (`★`)** bookmarking & filter chip, **Quick Train** 1-tap solo exercise launch, eye-level heroic camera framing, and a **STUDIO BG / DARK BG** toggle.
+
 ## v2.0.0
 - **Real 3D WebGL Sculpted Faceless Human Engine (`webgl-3d.js`, `kinematics-3d.js`, `mesh-male.js`, `mesh-female.js`):** Completely replaced 2D flat/puppet drawings with real watertight 18,000-triangle volumetric sculpted 3D Male & Female faceless anatomical meshes rendered at 60 FPS in WebGL with 17-bone GPU skeletal skinning.
 - **360° Touch-Orbit & GPU 3D Muscle Picking:** Spin the 3D human figure freely with your finger on the Dashboard, Tutor Explorer, Exercise Modal, and Active Workout Logger; tap any muscle directly on the 3D body to filter exercises.

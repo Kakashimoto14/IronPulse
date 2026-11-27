@@ -376,9 +376,9 @@ html, body {
 }
 
 .badge-secondary {
-  background: var(--signal-amber-dim);
-  border-color: rgba(245, 158, 11, 0.28);
-  color: #FCD34D;
+  background: rgba(79, 107, 255, 0.16);
+  border-color: rgba(79, 107, 255, 0.36);
+  color: #93A8FF;
 }
 
 .badge-stabilizer {
@@ -1167,4 +1167,63 @@ html, body {
   font-weight: 600;
   color: var(--ink-dim);
   pointer-events: none;
+}
+
+
+/* v2.1.0 Lyfta-Grade Studio Backdrop & Exercise About/History/Progress Tabs */
+.studio-light {
+  background: radial-gradient(circle at 50% 42%, #E2E7EF 0%, #CBD2DC 68%, #BCC4D0 100%) !important;
+}
+.ex-subtabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: var(--bg-plate);
+  border: 1px solid var(--line-steel);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+.ex-subtab-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-slate);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 4px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.ex-subtab-btn.active {
+  background: var(--bg-elevated);
+  color: var(--ink-chalk);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.action-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.action-tile {
+  background: var(--bg-plate);
+  border: 1px solid var(--line-steel);
+  border-radius: 12px;
+  padding: 10px 6px;
+  color: var(--ink-dim);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.action-tile.fav-on {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #FCD34D;
 }

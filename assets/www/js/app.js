@@ -75,13 +75,15 @@
 
   function build3DExplorerHtml(prefix) {
     var stMode = (root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt';
-    return '<div class="explorer-3d-stage">' +
+    var bgMode = (root.IronPulse3D && root.IronPulse3D.getGlobalBackdrop()) || 'dark';
+    return '<div class="explorer-3d-stage ' + (bgMode === 'light' ? 'studio-light' : '') + '">' +
       '<canvas id="' + prefix + '-3d-canvas"></canvas>' +
       '<div class="orbit-hint">↻ DRAG 360° • TAP MUSCLE</div>' +
+      '<button type="button" class="cam-pill" data-' + prefix + '-bg style="position:absolute;top:10px;right:10px;background:rgba(9,10,14,0.72);color:#F8FAFC;border:1px solid rgba(255,255,255,0.12);">' + (bgMode === 'light' ? 'DARK BG' : 'STUDIO BG') + '</button>' +
       '<div class="cam-bar-3d">' +
         '<div class="cam-pill-group">' +
           '<button type="button" class="cam-pill active" data-' + prefix + '-cam="0">FRONT</button>' +
-          '<button type="button" class="cam-pill" data-' + prefix + '-cam="38">3/4</button>' +
+          '<button type="button" class="cam-pill" data-' + prefix + '-cam="36">3/4</button>' +
           '<button type="button" class="cam-pill" data-' + prefix + '-cam="180">BACK</button>' +
         '</div>' +
         '<div class="cam-pill-group">' +
@@ -98,8 +100,8 @@
     var scene = root.IronPulse3D.create3DScene(cv, {
       mode: 'explorer',
       initialYaw: 0,
-      initialPitch: 6,
-      initialDist: 2.68,
+      initialPitch: 2,
+      initialDist: 2.48,
       targetY: 0.94,
       getConfig: function () {
         return {
@@ -119,7 +121,7 @@
         btn.onclick = function () {
           document.querySelectorAll('[data-' + prefix + '-cam]').forEach(function (x) { x.classList.remove('active'); });
           btn.classList.add('active');
-          scene.setCameraAngle(Number(btn.getAttribute('data-' + prefix + '-cam')), 6);
+          scene.setCameraAngle(Number(btn.getAttribute('data-' + prefix + '-cam')), 2);
           Native.vibrateLight();
         };
       });
@@ -131,6 +133,15 @@
           Native.vibrateLight();
         };
       });
+      var bgBtn = document.querySelector('[data-' + prefix + '-bg]');
+      if (bgBtn) {
+        bgBtn.onclick = function () {
+          var nextBg = root.IronPulse3D.getGlobalBackdrop() === 'light' ? 'dark' : 'light';
+          root.IronPulse3D.setGlobalBackdrop(nextBg);
+          bgBtn.textContent = nextBg === 'light' ? 'DARK BG' : 'STUDIO BG';
+          Native.vibrateLight();
+        };
+      }
     }
   }
 
@@ -632,6 +643,7 @@
     var fatigue = Prog.computeMuscleFatigue(state.sessions, Data.EXERCISE_MAP, Date.now(), state.profile.recoveryMode);
     var equipFilters = [
       { id: 'all', label: 'ALL (' + Data.EXERCISES.length + ')' },
+      { id: 'favorites', label: '★ SAVED (' + ((state.favorites || []).length) + ')' },
       { id: 'gym', label: 'GYM' },
       { id: 'dumbbell', label: 'DUMBBELL' },
       { id: 'calisthenics', label: 'CALISTHENICS' },
@@ -641,7 +653,9 @@
     ];
 
     var filtered = Data.EXERCISES.filter(function (ex) {
-      if (tutorEquipFilter !== 'all' && ex.equipment !== tutorEquipFilter) return false;
+      if (tutorEquipFilter === 'favorites') {
+        if ((state.favorites || []).indexOf(ex.id) === -1) return false;
+      } else if (tutorEquipFilter !== 'all' && ex.equipment !== tutorEquipFilter) return false;
       if (tutorMuscleFilter !== 'all') {
         var hit = ex.primary.indexOf(tutorMuscleFilter) !== -1 || ex.secondary.indexOf(tutorMuscleFilter) !== -1;
         if (!hit) return false;
@@ -1046,125 +1060,262 @@
     }
   }
 
-  function openExerciseTutorModal(exId) {
+  function openExerciseTutorModal(exId, initialSubTab) {
     var ex = Data.EXERCISE_MAP[exId];
     if (!ex) return;
     stopAllLoops();
+    var subTab = initialSubTab || 'about';
+    if (!state.favorites) state.favorites = [];
+    var isFav = state.favorites.indexOf(ex.id) !== -1;
+    var hist = DB.getExerciseHistory(state, ex.id);
 
-    var html =
-      '<div class="tutor-stage">' +
-        '<div class="tutor-canvas-wrap"><canvas id="modal-tutor-canvas"></canvas>' +
-          '<div class="stage-hud-top">' +
-            '<span class="stage-hud-chip"><span class="phase-dot live-dot"></span><span id="modal-phase-lbl">ECCENTRIC</span></span>' +
-            '<span class="stage-hud-chip">' + state.profile.sex.toUpperCase() + ' • ' + ex.tempo + '</span>' +
+    function renderSubView() {
+      stopAllLoops();
+      var stMode = (root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt';
+      var bgMode = (root.IronPulse3D && root.IronPulse3D.getGlobalBackdrop()) || 'dark';
+      var tabsHtml =
+        '<div class="ex-subtabs">' +
+          '<button type="button" class="ex-subtab-btn ' + (subTab === 'about' ? 'active' : '') + '" data-ex-sub="about">About</button>' +
+          '<button type="button" class="ex-subtab-btn ' + (subTab === 'history' ? 'active' : '') + '" data-ex-sub="history">History (' + hist.length + ')</button>' +
+          '<button type="button" class="ex-subtab-btn ' + (subTab === 'progress' ? 'active' : '') + '" data-ex-sub="progress">Progress</button>' +
+        '</div>';
+
+      var bodyHtml = '';
+      if (subTab === 'about') {
+        bodyHtml =
+          '<div class="tutor-stage">' +
+            '<div class="tutor-canvas-wrap ' + (bgMode === 'light' ? 'studio-light' : '') + '"><canvas id="modal-tutor-canvas"></canvas>' +
+              '<div class="stage-hud-top">' +
+                '<span class="stage-hud-chip"><span class="phase-dot live-dot"></span><span id="modal-phase-lbl">ECCENTRIC</span></span>' +
+                '<span class="stage-hud-chip">' + state.profile.sex.toUpperCase() + ' • ' + ex.tempo + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="tutor-controls">' +
+              '<button type="button" id="modal-play-btn" class="btn btn-secondary btn-sm btn-tactile">PAUSE</button>' +
+              '<div class="speed-group">' +
+                '<button type="button" class="speed-btn" data-mcam="0">FRONT</button>' +
+                '<button type="button" class="speed-btn active" data-mcam="36">3/4</button>' +
+                '<button type="button" class="speed-btn" data-mcam="90">SIDE</button>' +
+              '</div>' +
+              '<div class="speed-group">' +
+                '<button type="button" class="speed-btn ' + (stMode === 'sculpt' ? 'active' : '') + '" data-mstyle="sculpt">3D</button>' +
+                '<button type="button" class="speed-btn ' + (stMode === 'athlete' ? 'active' : '') + '" data-mstyle="athlete">SKIN</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="tutor-controls" style="padding-top:0;border-top:none;">' +
+              '<button type="button" id="modal-bg-btn" class="btn btn-ghost btn-sm btn-tactile" style="min-height:28px;font-size:10px;">' + (bgMode === 'light' ? 'DARK BG' : 'STUDIO BG') + '</button>' +
+              '<div class="speed-group">' +
+                '<button type="button" class="speed-btn" data-spd="0.5">0.5X</button>' +
+                '<button type="button" class="speed-btn active" data-spd="1">1.0X</button>' +
+                '<button type="button" class="speed-btn" data-spd="1.4">FAST</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="phase-scrubber">' +
+              '<input id="modal-scrubber" type="range" min="0" max="100" value="0" />' +
+              '<div class="phase-labels"><span>Setup</span><span>Eccentric</span><span>Peak</span><span>Lockout</span></div>' +
+            '</div>' +
           '</div>' +
-        '</div>' +
-        '<div class="tutor-controls">' +
-          '<button type="button" id="modal-play-btn" class="btn btn-secondary btn-sm btn-tactile">PAUSE</button>' +
-          '<div class="speed-group">' +
-            '<button type="button" class="speed-btn" data-mcam="0">FRONT</button>' +
-            '<button type="button" class="speed-btn active" data-mcam="38">3/4</button>' +
-            '<button type="button" class="speed-btn" data-mcam="90">SIDE</button>' +
+
+          '<div class="action-strip">' +
+            '<button type="button" id="btn-ex-fav" class="action-tile btn-tactile ' + (isFav ? 'fav-on' : '') + '">' +
+              '<span style="font-size:16px;">' + (isFav ? '★' : '☆') + '</span><span>' + (isFav ? 'Favorited' : 'Favorite') + '</span>' +
+            '</button>' +
+            '<button type="button" id="btn-ex-solo" class="action-tile btn-tactile">' +
+              '<span style="font-size:16px;color:var(--signal-crimson);">▶</span><span>Quick Train</span>' +
+            '</button>' +
+            '<button type="button" id="btn-ex-hist-jump" class="action-tile btn-tactile">' +
+              '<span style="font-size:16px;color:#93A8FF;">↗</span><span>1RM Trend</span>' +
+            '</button>' +
           '</div>' +
-          '<div class="speed-group">' +
-            '<button type="button" class="speed-btn ' + (((root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt') === 'sculpt' ? 'active' : '') + '" data-mstyle="sculpt">3D</button>' +
-            '<button type="button" class="speed-btn ' + (((root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt') === 'athlete' ? 'active' : '') + '" data-mstyle="athlete">SKIN</button>' +
+
+          '<div class="h-kicker" style="margin-bottom:8px;">Target Muscles</div>' +
+          '<div class="badge-row" style="margin-bottom:14px;">' +
+            ex.primary.map(function (m) { return '<span class="badge badge-primary">Primary • ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
+            ex.secondary.map(function (m) { return '<span class="badge badge-secondary">Secondary • ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
+            ex.stabilizers.map(function (m) { return '<span class="badge badge-stabilizer">Stabilizer • ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
           '</div>' +
-        '</div>' +
-        '<div class="tutor-controls" style="padding-top:0;border-top:none;">' +
-          '<span style="font-size:11px;color:var(--ink-slate);font-weight:600;">↻ Drag model to rotate 360°</span>' +
-          '<div class="speed-group">' +
-            '<button type="button" class="speed-btn" data-spd="0.5">0.5X</button>' +
-            '<button type="button" class="speed-btn active" data-spd="1">1.0X</button>' +
-            '<button type="button" class="speed-btn" data-spd="1.4">FAST</button>' +
+
+          '<div class="plate" style="padding:14px;margin-bottom:12px;">' +
+            '<div class="h-kicker" style="color:#93A8FF;margin-bottom:4px;">Breathing &amp; Bracing</div>' +
+            '<div style="font-size:13px;color:var(--ink-dim);">' + esc(ex.breathing) + '</div>' +
           '</div>' +
-        '</div>' +
-        '<div class="phase-scrubber">' +
-          '<input id="modal-scrubber" type="range" min="0" max="100" value="0" />' +
-          '<div class="phase-labels"><span>SETUP</span><span>ECCENTRIC</span><span>PEAK</span><span>LOCKOUT</span></div>' +
-        '</div>' +
-      '</div>' +
 
-      '<div class="badge-row" style="margin-bottom:12px;">' +
-        ex.primary.map(function (m) { return '<span class="badge badge-primary">PRIMARY: ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
-        ex.secondary.map(function (m) { return '<span class="badge badge-secondary">SYNERGIST: ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
-        ex.stabilizers.map(function (m) { return '<span class="badge badge-stabilizer">STAB: ' + esc((Data.MUSCLES[m] || {}).name || m) + '</span>'; }).join('') +
-      '</div>' +
+          '<div class="h-kicker" style="margin-bottom:8px;">Execution Cues</div>' +
+          '<ul class="cue-list" style="margin-bottom:14px;">' +
+            ex.cues.map(function (c, i) {
+              return '<li class="cue-item"><span class="cue-num">' + (i + 1) + '</span><span>' + esc(c) + '</span></li>';
+            }).join('') +
+          '</ul>' +
 
-      '<div class="plate" style="padding:12px;margin-bottom:10px;">' +
-        '<div class="h-kicker" style="color:var(--signal-cobalt);margin-bottom:4px;">BREATHING &amp; BRACING PROTOCOL</div>' +
-        '<div style="font-size:13px;">' + esc(ex.breathing) + '</div>' +
-      '</div>' +
+          '<div class="h-kicker" style="margin-bottom:8px;">Form Doctor — Common Mistakes</div>' +
+          ex.mistakes.map(function (m) {
+            return '<div class="mistake-box"><div class="mistake-bad">✕ ' + esc(m.bad) + '</div><div class="mistake-fix">✓ ' + esc(m.fix) + '</div></div>';
+          }).join('') +
 
-      '<div class="h-kicker" style="margin-bottom:6px;">BIOMECHANICAL EXECUTION CUES</div>' +
-      '<ul class="cue-list" style="margin-bottom:14px;">' +
-        ex.cues.map(function (c, i) {
-          return '<li class="cue-item"><span class="cue-num">' + (i + 1) + '</span><span>' + esc(c) + '</span></li>';
-        }).join('') +
-      '</ul>' +
+          '<div class="plate" style="padding:14px;margin-top:12px;margin-bottom:0;">' +
+            '<div class="h-kicker" style="margin-bottom:6px;">Progression Ladder</div>' +
+            '<div class="mono" style="font-size:11px;color:var(--ink-slate);">EASIER: <span style="color:var(--ink-chalk);">' + esc(ex.ladder.easier) + '</span></div>' +
+            '<div class="mono" style="font-size:11px;color:var(--signal-crimson);margin:4px 0;">CURRENT: <strong>' + esc(ex.ladder.current) + '</strong></div>' +
+            '<div class="mono" style="font-size:11px;color:var(--signal-olive);">NEXT LEVEL: ' + esc(ex.ladder.harder) + '</div>' +
+          '</div>';
+      } else if (subTab === 'history') {
+        if (hist.length === 0) {
+          bodyHtml = '<div class="plate"><div class="h-section" style="margin-bottom:6px;">No History Yet</div>' +
+            '<div style="font-size:13px;color:var(--ink-slate);margin-bottom:14px;">Log a working set of ' + esc(ex.name) + ' to track progressive overload and automatic 1RM gains here.</div>' +
+            '<button type="button" id="btn-ex-solo-empty" class="btn btn-primary btn-full btn-tactile">Start Quick Session</button></div>';
+        } else {
+          bodyHtml = hist.slice().reverse().map(function (h) {
+            var dt = new Date(h.date || Date.now());
+            var setsHtml = (h.sets || []).filter(function (s) { return s.done; }).map(function (s, idx) {
+              var e1 = s.weight > 0 ? Prog.epley1RM(s.weight, s.reps) : 0;
+              return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line-steel);font-size:13px;">' +
+                '<span class="mono" style="color:var(--ink-slate);">' + (s.warmup ? 'Warmup' : ('Set ' + (idx + 1))) + '</span>' +
+                '<span class="mono" style="font-weight:700;">' + displayWeight(s.weight) + ' ' + unitLabel() + ' × ' + s.reps + (s.rir ? (' (' + s.rir + ' RIR)') : '') + '</span>' +
+                '<span class="mono" style="color:var(--signal-crimson);">' + (e1 > 0 ? ('1RM ' + displayWeight(e1)) : '') + '</span>' +
+              '</div>';
+            }).join('');
+            return '<div class="plate" style="padding:14px;"><div class="h-kicker" style="margin-bottom:8px;">' + dt.toLocaleDateString() + '</div>' + setsHtml + '</div>';
+          }).join('');
+        }
+      } else {
+        var pr = state.prs && state.prs[ex.id];
+        bodyHtml =
+          '<div class="stat-grid-3">' +
+            '<div class="stat-cell"><div class="stat-val" style="font-size:17px;">' + (pr ? (displayWeight(pr.e1rm) + ' ' + unitLabel()) : '--') + '</div><div class="stat-lbl">Best Est. 1RM</div></div>' +
+            '<div class="stat-cell"><div class="stat-val" style="font-size:17px;">' + (pr ? (displayWeight(pr.weight) + '×' + pr.reps) : '--') + '</div><div class="stat-lbl">Top Set</div></div>' +
+            '<div class="stat-cell"><div class="stat-val" style="font-size:17px;">' + hist.length + '</div><div class="stat-lbl">Sessions</div></div>' +
+          '</div>' +
+          '<div class="plate" style="padding:14px;">' +
+            '<div class="h-kicker" style="margin-bottom:8px;">Estimated 1RM Progression</div>' +
+            '<div class="chart-box"><canvas id="modal-ex-1rm-chart"></canvas></div>' +
+          '</div>';
+      }
 
-      '<div class="h-kicker" style="margin-bottom:6px;">FORM DOCTOR — FIX COMMON MISTAKES</div>' +
-      ex.mistakes.map(function (m) {
-        return '<div class="mistake-box"><div class="mistake-bad">✕ ' + esc(m.bad) + '</div><div class="mistake-fix">✓ ' + esc(m.fix) + '</div></div>';
-      }).join('') +
+      document.getElementById('modal-body').innerHTML = tabsHtml + bodyHtml;
 
-      '<div class="plate" style="padding:12px;margin-top:12px;margin-bottom:0;">' +
-        '<div class="h-kicker" style="margin-bottom:6px;">PROGRESSION LADDER</div>' +
-        '<div class="mono" style="font-size:11px;color:var(--ink-slate);">EASIER: <span style="color:var(--ink-chalk);">' + esc(ex.ladder.easier) + '</span></div>' +
-        '<div class="mono" style="font-size:11px;color:var(--signal-crimson);margin:3px 0;">CURRENT: <strong>' + esc(ex.ladder.current) + '</strong></div>' +
-        '<div class="mono" style="font-size:11px;color:var(--signal-olive);">NEXT LEVEL: ' + esc(ex.ladder.harder) + '</div>' +
-      '</div>';
+      document.querySelectorAll('[data-ex-sub]').forEach(function (b) {
+        b.onclick = function () {
+          subTab = b.getAttribute('data-ex-sub');
+          Native.vibrateLight();
+          renderSubView();
+        };
+      });
 
-    openSimpleModal(ex.equipment.toUpperCase() + ' TUTOR', ex.name, html);
+      if (subTab === 'about') {
+        var cv = document.getElementById('modal-tutor-canvas');
+        var scrub = document.getElementById('modal-scrubber');
+        var pLbl = document.getElementById('modal-phase-lbl');
+        var loop = Rig.createTutorLoop(cv, function () {
+          return { exercise: ex, sex: state.profile.sex, opts: { showVectors: true } };
+        }, function (frame, u) {
+          if (pLbl) pLbl.textContent = frame.phase;
+          if (scrub && !loop.isPaused()) scrub.value = Math.round(u * 100);
+        });
+        activeLoops.push(loop);
 
-    var cv = document.getElementById('modal-tutor-canvas');
-    var scrub = document.getElementById('modal-scrubber');
-    var pLbl = document.getElementById('modal-phase-lbl');
-    var loop = Rig.createTutorLoop(cv, function () {
-      return { exercise: ex, sex: state.profile.sex, opts: { showVectors: true } };
-    }, function (frame, u) {
-      if (pLbl) pLbl.textContent = frame.phase;
-      if (scrub && !loop.isPaused()) scrub.value = Math.round(u * 100);
-    });
-    activeLoops.push(loop);
+        document.getElementById('modal-play-btn').onclick = function (e) {
+          var next = !loop.isPaused();
+          loop.setPaused(next);
+          e.target.textContent = next ? 'PLAY' : 'PAUSE';
+          Native.vibrateLight();
+        };
+        scrub.oninput = function () {
+          loop.setPaused(true);
+          document.getElementById('modal-play-btn').textContent = 'PLAY';
+          loop.setProgress(Number(scrub.value) / 100);
+        };
+        document.querySelectorAll('#modal-body [data-spd]').forEach(function (b) {
+          b.onclick = function () {
+            document.querySelectorAll('#modal-body [data-spd]').forEach(function (x) { x.classList.remove('active'); });
+            b.classList.add('active');
+            loop.setSpeed(Number(b.getAttribute('data-spd')));
+            Native.vibrateLight();
+          };
+        });
+        document.querySelectorAll('#modal-body [data-mcam]').forEach(function (b) {
+          b.onclick = function () {
+            document.querySelectorAll('#modal-body [data-mcam]').forEach(function (x) { x.classList.remove('active'); });
+            b.classList.add('active');
+            if (loop.setCameraAngle) loop.setCameraAngle(Number(b.getAttribute('data-mcam')), 10);
+            Native.vibrateLight();
+          };
+        });
+        document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (b) {
+          b.onclick = function () {
+            document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (x) { x.classList.remove('active'); });
+            b.classList.add('active');
+            if (root.IronPulse3D) root.IronPulse3D.setGlobalStyle(b.getAttribute('data-mstyle'));
+            Native.vibrateLight();
+          };
+        });
+        var mBg = document.getElementById('modal-bg-btn');
+        if (mBg) {
+          mBg.onclick = function () {
+            if (!root.IronPulse3D) return;
+            var nxt = root.IronPulse3D.getGlobalBackdrop() === 'light' ? 'dark' : 'light';
+            root.IronPulse3D.setGlobalBackdrop(nxt);
+            mBg.textContent = nxt === 'light' ? 'DARK BG' : 'STUDIO BG';
+            Native.vibrateLight();
+          };
+        }
+        document.getElementById('btn-ex-fav').onclick = function () {
+          var idx = state.favorites.indexOf(ex.id);
+          if (idx === -1) { state.favorites.push(ex.id); isFav = true; }
+          else { state.favorites.splice(idx, 1); isFav = false; }
+          DB.saveState(state);
+          Native.vibrateSetDone();
+          renderSubView();
+        };
+        document.getElementById('btn-ex-solo').onclick = function () {
+          closeModal();
+          startNewWorkoutSession({
+            title: ex.name.toUpperCase(),
+            focus: 'Quick Specialist Session',
+            exercises: [{ exerciseId: ex.id, sets: 3, repRange: [8, 12], rest: ex.rest || 120, tempo: ex.tempo, rirTarget: '1-2 RIR' }]
+          });
+        };
+        document.getElementById('btn-ex-hist-jump').onclick = function () {
+          subTab = 'progress';
+          Native.vibrateLight();
+          renderSubView();
+        };
+      } else if (subTab === 'history') {
+        var soloEmpty = document.getElementById('btn-ex-solo-empty');
+        if (soloEmpty) {
+          soloEmpty.onclick = function () {
+            closeModal();
+            startNewWorkoutSession({
+              title: ex.name.toUpperCase(),
+              focus: 'Quick Specialist Session',
+              exercises: [{ exerciseId: ex.id, sets: 3, repRange: [8, 12], rest: ex.rest || 120, tempo: ex.tempo, rirTarget: '1-2 RIR' }]
+            });
+          };
+        }
+      } else if (subTab === 'progress' && Charts) {
+        var pts = [];
+        hist.forEach(function (h) {
+          var best = 0;
+          (h.sets || []).forEach(function (st) {
+            if (st.done && !st.warmup) {
+              var val = st.weight > 0 ? Prog.epley1RM(st.weight, st.reps) : st.reps;
+              if (val > best) best = val;
+            }
+          });
+          if (best > 0) {
+            var dt = new Date(h.date || Date.now());
+            pts.push({ label: (dt.getMonth() + 1) + '/' + dt.getDate(), value: (ex.bodyweight && best < 40) ? best : displayWeight(best) });
+          }
+        });
+        Charts.drawLineChart(document.getElementById('modal-ex-1rm-chart'), pts, {
+          color: '#FF3B30',
+          unit: unitLabel(),
+          emptyText: 'LOG SETS TO CHART ' + ex.name.toUpperCase()
+        });
+      }
+    }
 
-    document.getElementById('modal-play-btn').onclick = function (e) {
-      var next = !loop.isPaused();
-      loop.setPaused(next);
-      e.target.textContent = next ? 'PLAY' : 'PAUSE';
-      Native.vibrateLight();
-    };
-
-    scrub.oninput = function () {
-      loop.setPaused(true);
-      document.getElementById('modal-play-btn').textContent = 'PLAY';
-      loop.setProgress(Number(scrub.value) / 100);
-    };
-
-    document.querySelectorAll('#modal-body [data-spd]').forEach(function (b) {
-      b.onclick = function () {
-        document.querySelectorAll('#modal-body [data-spd]').forEach(function (x) { x.classList.remove('active'); });
-        b.classList.add('active');
-        loop.setSpeed(Number(b.getAttribute('data-spd')));
-        Native.vibrateLight();
-      };
-    });
-    document.querySelectorAll('#modal-body [data-mcam]').forEach(function (b) {
-      b.onclick = function () {
-        document.querySelectorAll('#modal-body [data-mcam]').forEach(function (x) { x.classList.remove('active'); });
-        b.classList.add('active');
-        if (loop.setCameraAngle) loop.setCameraAngle(Number(b.getAttribute('data-mcam')), 14);
-        Native.vibrateLight();
-      };
-    });
-    document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (b) {
-      b.onclick = function () {
-        document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (x) { x.classList.remove('active'); });
-        b.classList.add('active');
-        if (root.IronPulse3D) root.IronPulse3D.setGlobalStyle(b.getAttribute('data-mstyle'));
-        Native.vibrateLight();
-      };
-    });
+    openSimpleModal(ex.equipment.toUpperCase() + ' TUTOR', ex.name, '');
+    renderSubView();
   }
 
   // ============================================================
