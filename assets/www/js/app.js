@@ -72,6 +72,68 @@
       .replace(/"/g, '&quot;');
   }
 
+
+  function build3DExplorerHtml(prefix) {
+    var stMode = (root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt';
+    return '<div class="explorer-3d-stage">' +
+      '<canvas id="' + prefix + '-3d-canvas"></canvas>' +
+      '<div class="orbit-hint">↻ DRAG 360° • TAP MUSCLE</div>' +
+      '<div class="cam-bar-3d">' +
+        '<div class="cam-pill-group">' +
+          '<button type="button" class="cam-pill active" data-' + prefix + '-cam="0">FRONT</button>' +
+          '<button type="button" class="cam-pill" data-' + prefix + '-cam="38">3/4</button>' +
+          '<button type="button" class="cam-pill" data-' + prefix + '-cam="180">BACK</button>' +
+        '</div>' +
+        '<div class="cam-pill-group">' +
+          '<button type="button" class="cam-pill ' + (stMode === 'sculpt' ? 'active' : '') + '" data-' + prefix + '-style="sculpt">SCULPT</button>' +
+          '<button type="button" class="cam-pill ' + (stMode === 'athlete' ? 'active' : '') + '" data-' + prefix + '-style="athlete">SKIN</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function mount3DExplorer(prefix, fatigue, selectedMuscle, onPick) {
+    var cv = document.getElementById(prefix + '-3d-canvas');
+    if (!cv || !root.IronPulse3D) return;
+    var scene = root.IronPulse3D.create3DScene(cv, {
+      mode: 'explorer',
+      initialYaw: 0,
+      initialPitch: 6,
+      initialDist: 2.68,
+      targetY: 0.94,
+      getConfig: function () {
+        return {
+          sex: state.profile.sex,
+          fatigueMap: fatigue,
+          selectedMuscle: selectedMuscle
+        };
+      },
+      onPickMuscle: function (mId) {
+        Native.vibrateLight();
+        if (onPick) onPick(mId);
+      }
+    });
+    if (scene) {
+      activeLoops.push(scene);
+      document.querySelectorAll('[data-' + prefix + '-cam]').forEach(function (btn) {
+        btn.onclick = function () {
+          document.querySelectorAll('[data-' + prefix + '-cam]').forEach(function (x) { x.classList.remove('active'); });
+          btn.classList.add('active');
+          scene.setCameraAngle(Number(btn.getAttribute('data-' + prefix + '-cam')), 6);
+          Native.vibrateLight();
+        };
+      });
+      document.querySelectorAll('[data-' + prefix + '-style]').forEach(function (btn) {
+        btn.onclick = function () {
+          document.querySelectorAll('[data-' + prefix + '-style]').forEach(function (x) { x.classList.remove('active'); });
+          btn.classList.add('active');
+          root.IronPulse3D.setGlobalStyle(btn.getAttribute('data-' + prefix + '-style'));
+          Native.vibrateLight();
+        };
+      });
+    }
+  }
+
   function syncTopBar() {
     var disc = Data.DISCIPLINES[state.profile.discipline] || Data.DISCIPLINES.strength;
     var sub = document.getElementById('top-discipline-label');
@@ -392,6 +454,7 @@
 
   // --- TAB 1: TODAY DASHBOARD ---
   function renderToday(main) {
+    stopAllLoops();
     if (!state.program) {
       state.program = Builder.generateProgram(state.profile);
       DB.saveState(state);
@@ -497,10 +560,7 @@
           '<div><div class="h-kicker">LIVE RECOVERY HEATMAP (' + state.profile.sex.toUpperCase() + ')</div><div class="h-section">TAP ANY MUSCLE TO STUDY</div></div>' +
           '<div class="badge-row"><span class="badge badge-primary">HOT</span><span class="badge badge-secondary">REC</span><span class="badge badge-olive">READY</span></div>' +
         '</div>' +
-        '<div class="bodymap-wrap">' +
-          '<div class="bodymap-panel"><div class="h-kicker" style="margin-bottom:4px;">ANTERIOR (FRONT)</div><canvas id="dash-map-front"></canvas></div>' +
-          '<div class="bodymap-panel"><div class="h-kicker" style="margin-bottom:4px;">POSTERIOR (BACK)</div><canvas id="dash-map-back"></canvas></div>' +
-        '</div>' +
+        build3DExplorerHtml('dash') +
       '</div>' +
 
       '<div class="plate stagger-item">' +
@@ -560,20 +620,15 @@
       renderToday(main);
     };
 
-    BodyMap.drawBodyMap(document.getElementById('dash-map-front'), 'front', state.profile.sex, fatigue, null, function (muscleId) {
+    mount3DExplorer('dash', fatigue, null, function (muscleId) {
       tutorMuscleFilter = muscleId;
-      Native.vibrateLight();
-      renderTab('tutor', true);
-    });
-    BodyMap.drawBodyMap(document.getElementById('dash-map-back'), 'back', state.profile.sex, fatigue, null, function (muscleId) {
-      tutorMuscleFilter = muscleId;
-      Native.vibrateLight();
       renderTab('tutor', true);
     });
   }
 
   // --- TAB 2: ANIMATED TUTOR & 40-EXERCISE LIBRARY ---
   function renderTutor(main) {
+    stopAllLoops();
     var fatigue = Prog.computeMuscleFatigue(state.sessions, Data.EXERCISE_MAP, Date.now(), state.profile.recoveryMode);
     var equipFilters = [
       { id: 'all', label: 'ALL (' + Data.EXERCISES.length + ')' },
@@ -610,10 +665,7 @@
           '<div><div class="h-kicker">INTERACTIVE ANATOMICAL EXPLORER</div><div class="h-section">TAP MUSCLE: ' + esc(activeMuscleLabel) + '</div></div>' +
           (tutorMuscleFilter !== 'all' ? '<button type="button" id="btn-clear-muscle" class="btn btn-secondary btn-sm btn-tactile">CLEAR</button>' : '') +
         '</div>' +
-        '<div class="bodymap-wrap">' +
-          '<div class="bodymap-panel"><div class="h-kicker" style="margin-bottom:4px;">FRONT</div><canvas id="tutor-map-front"></canvas></div>' +
-          '<div class="bodymap-panel"><div class="h-kicker" style="margin-bottom:4px;">BACK</div><canvas id="tutor-map-back"></canvas></div>' +
-        '</div>' +
+        build3DExplorerHtml('tutor') +
       '</div>' +
 
       '<div style="margin-bottom:10px;">' +
@@ -666,14 +718,8 @@
       };
     });
 
-    BodyMap.drawBodyMap(document.getElementById('tutor-map-front'), 'front', state.profile.sex, fatigue, tutorMuscleFilter, function (m) {
+    mount3DExplorer('tutor', fatigue, tutorMuscleFilter, function (m) {
       tutorMuscleFilter = tutorMuscleFilter === m ? 'all' : m;
-      Native.vibrateLight();
-      renderTutor(main);
-    });
-    BodyMap.drawBodyMap(document.getElementById('tutor-map-back'), 'back', state.profile.sex, fatigue, tutorMuscleFilter, function (m) {
-      tutorMuscleFilter = tutorMuscleFilter === m ? 'all' : m;
-      Native.vibrateLight();
       renderTutor(main);
     });
   }
@@ -1016,6 +1062,18 @@
         '<div class="tutor-controls">' +
           '<button type="button" id="modal-play-btn" class="btn btn-secondary btn-sm btn-tactile">PAUSE</button>' +
           '<div class="speed-group">' +
+            '<button type="button" class="speed-btn" data-mcam="0">FRONT</button>' +
+            '<button type="button" class="speed-btn active" data-mcam="38">3/4</button>' +
+            '<button type="button" class="speed-btn" data-mcam="90">SIDE</button>' +
+          '</div>' +
+          '<div class="speed-group">' +
+            '<button type="button" class="speed-btn ' + (((root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt') === 'sculpt' ? 'active' : '') + '" data-mstyle="sculpt">3D</button>' +
+            '<button type="button" class="speed-btn ' + (((root.IronPulse3D && root.IronPulse3D.getGlobalStyle()) || 'sculpt') === 'athlete' ? 'active' : '') + '" data-mstyle="athlete">SKIN</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="tutor-controls" style="padding-top:0;border-top:none;">' +
+          '<span style="font-size:11px;color:var(--ink-slate);font-weight:600;">↻ Drag model to rotate 360°</span>' +
+          '<div class="speed-group">' +
             '<button type="button" class="speed-btn" data-spd="0.5">0.5X</button>' +
             '<button type="button" class="speed-btn active" data-spd="1">1.0X</button>' +
             '<button type="button" class="speed-btn" data-spd="1.4">FAST</button>' +
@@ -1083,11 +1141,27 @@
       loop.setProgress(Number(scrub.value) / 100);
     };
 
-    document.querySelectorAll('#modal-body .speed-btn').forEach(function (b) {
+    document.querySelectorAll('#modal-body [data-spd]').forEach(function (b) {
       b.onclick = function () {
-        document.querySelectorAll('#modal-body .speed-btn').forEach(function (x) { x.classList.remove('active'); });
+        document.querySelectorAll('#modal-body [data-spd]').forEach(function (x) { x.classList.remove('active'); });
         b.classList.add('active');
         loop.setSpeed(Number(b.getAttribute('data-spd')));
+        Native.vibrateLight();
+      };
+    });
+    document.querySelectorAll('#modal-body [data-mcam]').forEach(function (b) {
+      b.onclick = function () {
+        document.querySelectorAll('#modal-body [data-mcam]').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        if (loop.setCameraAngle) loop.setCameraAngle(Number(b.getAttribute('data-mcam')), 14);
+        Native.vibrateLight();
+      };
+    });
+    document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (b) {
+      b.onclick = function () {
+        document.querySelectorAll('#modal-body [data-mstyle]').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        if (root.IronPulse3D) root.IronPulse3D.setGlobalStyle(b.getAttribute('data-mstyle'));
         Native.vibrateLight();
       };
     });

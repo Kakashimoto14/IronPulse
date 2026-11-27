@@ -107,4 +107,15 @@ const manifestXml = fs.readFileSync('android/AndroidManifest.xml', 'utf8');
 assert(manifestXml.includes('IronPulseWidgetProvider'), 'Widget provider not registered in AndroidManifest.xml');
 console.log('[PASS] Native Android Home Screen Widget & Analytics Charts verified');
 
+
+// 6. Verify v2.0.0 Real 3D WebGL Sculpted Meshes & 3D Kinematics Coverage
+const Kin3D = require('../assets/www/js/engine/kinematics-3d.js');
+assert(fs.existsSync('assets/www/js/data/mesh-male.js'), 'Missing 3D male mesh');
+assert(fs.existsSync('assets/www/js/data/mesh-female.js'), 'Missing 3D female mesh');
+assert(fs.existsSync('assets/www/js/engine/webgl-3d.js'), 'Missing WebGL 3D engine');
+for (const ex of Data.EXERCISES) {
+  assert(Kin3D.PROFILES[ex.kinematics], 'Missing 3D kinematics profile for ' + ex.id + ' (' + ex.kinematics + ')');
+}
+console.log('[PASS] 3D WebGL sculpted Male/Female meshes & all 3D exercise kinematics verified');
+
 console.log('=== ALL QA CHECKS PASSED ===');

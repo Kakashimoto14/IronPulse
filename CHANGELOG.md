@@ -1,5 +1,11 @@
 # IronPulse Changelog
 
+## v2.0.0
+- **Real 3D WebGL Sculpted Faceless Human Engine (`webgl-3d.js`, `kinematics-3d.js`, `mesh-male.js`, `mesh-female.js`):** Completely replaced 2D flat/puppet drawings with real watertight 18,000-triangle volumetric sculpted 3D Male & Female faceless anatomical meshes rendered at 60 FPS in WebGL with 17-bone GPU skeletal skinning.
+- **360° Touch-Orbit & GPU 3D Muscle Picking:** Spin the 3D human figure freely with your finger on the Dashboard, Tutor Explorer, Exercise Modal, and Active Workout Logger; tap any muscle directly on the 3D body to filter exercises.
+- **Dual Studio Looks (`SCULPT` & `SKIN`):** Switch live between matte alabaster 3D ecorché marble and warm athletic skin + charcoal sportswear, both featuring pulsing procedural 3D crimson muscle-fiber striations on active muscles.
+- **Real 3D Gym Equipment:** WebGL-rendered Olympic barbells with stacked iron plates, dumbbells, flat & incline benches, cable towers, pull-up rack, dip bars, and arm-wrestling competition table anchored dynamically to the 3D athlete's hands.
+
 ## v1.3.0
 - **Premium Fitness SaaS UI/UX Overhaul:** Complete visual redesign inspired by Hevy, Fitbod, and Ladder—soft elevated dark cards (`#090A0E` / `#12141B`), `14–22px` rounded geometry, glass-blur floating bottom navigation pill, bottom-sheet drag handles, clean humanist typography, and restrained soft-tinted muscle badges.
 - **Realistic Athletic Human Animator (`rig-renderer.js` v3.0 & `bodymap.js` v3.0):** Replaced geometric robot coloring with warm athletic skin shading, dark sportswear (gym shorts + female athletic top), 3/4 foreshortened Olympic barbells/benches/cable towers, and anatomical crimson-red muscle fiber overlays strictly on targeted muscles.

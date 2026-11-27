@@ -788,6 +788,14 @@
   }
 
   function createTutorLoop(canvas, getConfig, onFrame) {
+    if (root.IronPulse3D && root.IronPulse3D.create3DScene) {
+      var glScene = root.IronPulse3D.create3DScene(canvas, {
+        mode: 'exercise',
+        getConfig: getConfig,
+        onFrame: onFrame
+      });
+      if (glScene) return glScene;
+    }
     var rafId = null;
     var lastTs = 0;
     var u = 0;
